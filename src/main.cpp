@@ -90,6 +90,12 @@ std::optional<Controller::Key> parse_key(int key) {
         return Controller::Key::BACK;
     } else if (key == 'h') {
         return Controller::Key::HOME;
+    } else if (key == 'j') {
+        return Controller::Key::CH_DOWN;
+    } else if (key == 'k') {
+        return Controller::Key::CH_UP;
+    } else if (key == 'c') {
+        return Controller::Key::MENU;
     } else if (key == 'm') {
         return Controller::Key::MUTE;
     } else if (key == '+' || key == '=') {
@@ -102,9 +108,9 @@ std::optional<Controller::Key> parse_key(int key) {
             return postition_map.at(p);
         }
     }
-    else {
-        mvprintw(13, 0, "Key pressed %d\n", key);
-    }
+    // else {
+    //     mvprintw(13, 0, "Key pressed %d\n", key);
+    // }
     return {};
 }
 
@@ -115,7 +121,11 @@ void print_controller() {
     }
 }
 
-int main() {
+void setup_ncurses() {
+
+}
+
+int main(int argc, char *argv[]) {
     setlocale(LC_CTYPE, "");
     initscr();
     cbreak();
@@ -131,7 +141,13 @@ int main() {
         boost::asio::io_context ioc;
         Controller c {ioc};
 
-        while (c.is_open()) {
+        while (true) {
+            if (!c.is_open()) {
+                c.reconnect();
+                if (!c.is_open()) {
+                    printw("Connection with TV lost, closing...");
+                }
+            }
             print_controller();
             int key = getch();
             if (key == 'q') break;

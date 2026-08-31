@@ -15,6 +15,7 @@ class Controller {
     boost::asio::io_context &m_ioc;
     ssl::context m_ssl_ctx;
     websocket::stream<ssl::stream<tcp::socket>> m_ws;
+    std::optional<std::string> m_token;
 
 public:
     enum class Key {
@@ -39,6 +40,7 @@ public:
     Controller(boost::asio::io_context &ioc);
     void send_key(Key k);
     bool is_open();
+    void reconnect();
 private:
     void read_event();
 };
