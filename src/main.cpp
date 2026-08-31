@@ -146,6 +146,7 @@ int main(int argc, char *argv[]) {
                 c.reconnect();
                 if (!c.is_open()) {
                     printw("Connection with TV lost, closing...");
+                    break;
                 }
             }
             print_controller();
