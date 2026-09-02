@@ -1,168 +1,118 @@
 #include "controller.hpp"
-#include <boost/asio/ip/resolver_base.hpp>
-#include <boost/beast/core.hpp>
-#include <boost/beast/websocket.hpp>
-#include <boost/beast/websocket/ssl.hpp>
-#include <boost/asio/connect.hpp>
-#include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/ssl/stream.hpp>
-#include <boost/json.hpp>
-#include <boost/json/kind.hpp>
-#include <boost/json/object.hpp>
-#include <boost/json/parse.hpp>
-#include <boost/json/value.hpp>
-#include <iostream>
-#include <ncurses.h>
-#include <optional>
-#include <unordered_map>
+#include <boost/asio/io_context.hpp>
+#include <exception>
+#include <raylib-cpp.hpp>
+#include <array>
+#include <raylib.h>
+#include <string>
 
-using tcp = boost::asio::ip::tcp;
+constexpr int GRID_COLS = 7;
+constexpr int GRID_ROWS = 9;
+constexpr int W_HEIGHT = 350;
+constexpr int W_WIDTH = 200;
 
-const std::array<std::string, 11> pixels = {
-    "┌───────────┐",
-    "│⏻          │",
-    "│           │",
-    "│        │",
-    "│󰝟      │",
-    "│        │",
-    "│           │",
-    "│        │",
-    "│           │",
-    "│         │",
-    "└───────────┘"
-};
+raylib::Vector4 find_grid_position(int row, int col) {
+    int cell_width = W_WIDTH / GRID_COLS;
+    int cell_height = W_HEIGHT / GRID_ROWS;
+    raylib::Vector4 v { static_cast<float>(col * cell_width), static_cast<float>(row * cell_height),
+        static_cast<float>(cell_width), static_cast<float>(cell_height) };
 
-struct Pos {
-    int x;
-    int y;
+    return v;
+}
 
-    bool operator==(const Pos &p) const {
-        return p.x == x && p.y == y;
+constexpr raylib::Rectangle TEX_SIZE = { 0.0, 0.0, 24.0, 24.0 };
+
+struct Button {
+    raylib::Vector4 pos;
+    raylib::Texture tex;
+    Controller::Key key;
+    int clicked_frames;
+    int keycode;
+
+    Button(int row, int col, Controller::Key key, int keycode, std::string texture) {
+        if (!texture.empty()) {
+            texture = std::string(GetApplicationDirectory()) + texture;
+            tex.Load(texture);
+        }
+        pos = find_grid_position(row, col);
+        this->key = key;
+        clicked_frames = 0;
+        this->keycode = keycode;
     }
-};
-
-template <>
-struct std::hash<Pos> {
-    std::size_t operator()(const Pos& p) const noexcept {
-        return std::hash<int>()(p.x) ^ (std::hash<int>()(p.y) << 1);
-    }
-};
-
-std::unordered_map<Pos, Controller::Key> postition_map = {
-    {{1, 2}, Controller::Key::POWER},
-    {{1, 4}, Controller::Key::VOL_UP},
-    {{1, 5}, Controller::Key::MUTE},
-    {{1, 6}, Controller::Key::VOL_DOWN},
-    {{6, 4}, Controller::Key::UP},
-    {{7, 4}, Controller::Key::UP},
-    {{6, 5}, Controller::Key::ENTER},
-    {{7, 5}, Controller::Key::ENTER},
-    {{4, 5}, Controller::Key::LEFT},
-    {{5, 5}, Controller::Key::LEFT},
-    {{8, 5}, Controller::Key::RIGHT},
-    {{9, 5}, Controller::Key::RIGHT},
-    {{6, 6}, Controller::Key::DOWN},
-    {{7, 6}, Controller::Key::DOWN},
-    {{11, 4}, Controller::Key::CH_UP},
-    {{11, 6}, Controller::Key::CH_DOWN},
-    {{4, 8}, Controller::Key::BACK},
-    {{6, 8}, Controller::Key::PLAY},
-    {{8, 8}, Controller::Key::PAUSE},
-    {{4, 10}, Controller::Key::HOME},
-    {{5, 10}, Controller::Key::HOME},
-    {{8, 10}, Controller::Key::MENU},
-    {{9, 10}, Controller::Key::MENU},
-};
-//
-std::optional<Controller::Key> parse_key(int key) {
-    MEVENT event;
-    if (key == KEY_UP) {
-        return Controller::Key::UP;
-    } else if (key == KEY_DOWN) {
-        return Controller::Key::DOWN;
-    } else if (key == KEY_LEFT) {
-        return Controller::Key::LEFT;
-    } else if (key == KEY_RIGHT) {
-        return Controller::Key::RIGHT;
-    } else if (key == 10) {
-        return Controller::Key::ENTER;
-    } else if (key == 27) {
-        return Controller::Key::BACK;
-    } else if (key == 'h') {
-        return Controller::Key::HOME;
-    } else if (key == 'j') {
-        return Controller::Key::CH_DOWN;
-    } else if (key == 'k') {
-        return Controller::Key::CH_UP;
-    } else if (key == 'c') {
-        return Controller::Key::MENU;
-    } else if (key == 'm') {
-        return Controller::Key::MUTE;
-    } else if (key == '+' || key == '=') {
-        return Controller::Key::VOL_UP;
-    } else if (key == '-' || key == '_') {
-        return Controller::Key::VOL_DOWN;
-    } else if (key == KEY_MOUSE && getmouse(&event) == OK) {
-        Pos p{event.x, event.y };
-        if (postition_map.contains(p)) {
-            return postition_map.at(p);
+    void draw() const {
+        raylib::Rectangle rect { pos };
+        if (clicked_frames > 0) {
+            rect.DrawRounded(0.8, 16, raylib::Color::LightGray());
+        }
+        else {
+            rect.Draw(raylib::Color::RayWhite());
+        }
+        if (tex.IsValid()) {
+            tex.Draw(TEX_SIZE, pos);
         }
     }
-    // else {
-    //     mvprintw(13, 0, "Key pressed %d\n", key);
-    // }
-    return {};
-}
 
-void print_controller() {
-    mvprintw(1, 0, "%s\n", pixels[0].c_str());
-    for (int i = 1; i < pixels.size(); i++) {
-        printw("%s\n", pixels[i].c_str());
-    }
-}
-
-void setup_ncurses() {
-
-}
-
-int main(int argc, char *argv[]) {
-    setlocale(LC_CTYPE, "");
-    initscr();
-    cbreak();
-    noecho();
-    curs_set(0);
-    keypad(stdscr, TRUE);
-    mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
-    
-    int rows = 12;
-    int cols = 13;
-    printw("Press q to quit...\n");
-    try {
-        boost::asio::io_context ioc;
-        Controller c {ioc};
-
-        while (true) {
-            if (!c.is_open()) {
-                c.reconnect();
-                if (!c.is_open()) {
-                    printw("Connection with TV lost, closing...");
-                    break;
-                }
-            }
-            print_controller();
-            int key = getch();
-            if (key == 'q') break;
-            auto cmd = parse_key(key);
-            if (cmd) {
-                c.send_key(*cmd);
-            }
+    void update(Controller &c, int k) {
+        if (clicked_frames > 0 ) {
+            clicked_frames--;
         }
-    } 
-    catch (std::exception const& e) {
-        std::cerr << "Fatal Execution Error: " << e.what() << std::endl;
-        endwin();
-        return EXIT_FAILURE;
+        if (clicked() || k == keycode) {
+            c.send_key(key);
+            clicked_frames = 15;
+        }
     }
-    endwin();
-    return EXIT_SUCCESS;
+
+    bool clicked() const {
+        if (!raylib::Mouse::IsButtonPressed(MOUSE_BUTTON_LEFT) && 
+            !(clicked_frames == 1 && raylib::Mouse::IsButtonDown(MOUSE_BUTTON_LEFT))) {
+            return false;
+        }
+        auto mouse_pos = raylib::Mouse::GetPosition();
+        return mouse_pos.x > pos.x && mouse_pos.x < (pos.x + pos.z)
+            && mouse_pos.y > pos.y && mouse_pos.y < (pos.y + pos.w);
+    }
+};
+
+int main() {
+    raylib::Window w {W_WIDTH, W_HEIGHT, "B Controller"};
+    w.SetTargetFPS(60);
+    w.SetExitKey(KEY_NULL);
+
+    boost::asio::io_context ioc;
+    Controller c { ioc };
+
+    std::array<Button, 16> buttons = {
+        Button {0, 0, Controller::Key::POWER,   KEY_P, std::string("assets/circle-power.png")},
+        Button {2, 0, Controller::Key::VOL_UP,  KEY_EQUAL, std::string("assets/arrow-up.png")},
+        Button {3, 0, Controller::Key::MUTE,    KEY_M, std::string("assets/volume-x.png")},
+        Button {4, 0, Controller::Key::VOL_DOWN,KEY_MINUS, std::string("assets/arrow-down.png")},
+        Button {2, 6, Controller::Key::CH_UP,   KEY_K, std::string("assets/arrow-up.png")},
+        Button {4, 6, Controller::Key::CH_DOWN, KEY_J, std::string("assets/arrow-down.png")},
+        Button {2, 3, Controller::Key::UP,      KEY_UP, std::string("assets/circle-arrow-up.png")},
+        Button {3, 2, Controller::Key::LEFT,    KEY_LEFT, std::string("assets/circle-arrow-left.png")},
+        Button {3, 3, Controller::Key::ENTER,   KEY_ENTER, std::string("assets/circle.png")},
+        Button {3, 4, Controller::Key::RIGHT,   KEY_RIGHT, std::string("assets/circle-arrow-right.png")},
+        Button {4, 3, Controller::Key::DOWN,    KEY_DOWN, std::string("assets/circle-arrow-down.png")},
+        Button {6, 2, Controller::Key::BACK,    KEY_ESCAPE, std::string("assets/undo-2.png")},
+        Button {6, 3, Controller::Key::PLAY,    KEY_SPACE, std::string("assets/play.png")},
+        Button {6, 4, Controller::Key::PAUSE,   KEY_Z, std::string("assets/pause.png")},
+        Button {8, 2, Controller::Key::HOME,    KEY_H, std::string("assets/house.png")},
+        Button {8, 4, Controller::Key::MENU,    KEY_S, std::string("assets/settings.png")},
+    };
+
+    while (!w.ShouldClose() && c.is_open()) {
+        try {
+            int k = GetKeyPressed();
+            w.BeginDrawing();
+            w.ClearBackground(raylib::Color::RayWhite());
+            for (auto &b : buttons) {
+                b.update(c, k);
+                b.draw();
+            }
+            w.EndDrawing();
+        } catch (std::exception const &e) {
+            TraceLog(LOG_ERROR, "Exception occurred %s", e.what());
+        }
+    }
+    return 0;
 }

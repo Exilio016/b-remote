@@ -12,7 +12,6 @@
 #include <boost/json/value.hpp>
 #include <cstdlib>
 #include <filesystem>
-#include <format>
 #include <fstream>
 
 constexpr std::string TV_HOST = "Samsung.local";
