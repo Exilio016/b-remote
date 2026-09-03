@@ -86,7 +86,7 @@ std::optional<Controller::Key> parse_key(int key) {
         return Controller::Key::CH_DOWN;
     } else if (key == 'k') {
         return Controller::Key::CH_UP;
-    } else if (key == 'c') {
+    } else if (key == 's') {
         return Controller::Key::MENU;
     } else if (key == 'm') {
         return Controller::Key::MUTE;
@@ -94,6 +94,10 @@ std::optional<Controller::Key> parse_key(int key) {
         return Controller::Key::VOL_UP;
     } else if (key == '-' || key == '_') {
         return Controller::Key::VOL_DOWN;
+    } else if (key == ' ') {
+        return Controller::Key::PLAY;
+    }else if (key == 'z') {
+        return Controller::Key::PAUSE;
     } else if (key == KEY_MOUSE && getmouse(&event) == OK) {
         Pos p{event.x, event.y };
         if (postition_map.contains(p)) {
