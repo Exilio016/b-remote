@@ -1,18 +1,14 @@
 #include "controller.hpp"
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/connect.hpp>
-#include <boost/asio/post.hpp>
 #include <boost/beast/core.hpp>
-#include <boost/beast/core/buffers_to_string.hpp>
-#include <boost/beast/core/flat_buffer.hpp>
-#include <boost/beast/http/status.hpp>
 #include <boost/json.hpp>
-#include <boost/json/object.hpp>
-#include <boost/json/parse.hpp>
-#include <boost/json/value.hpp>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+
+#ifdef DEBUG_SSL_CONNECTION
+#include <openssl/ssl.h>
+#endif
 
 constexpr std::string TV_HOST = "Samsung.local";
 constexpr std::string TV_PORT = "8002";
@@ -66,7 +62,6 @@ void save_token_to_config(std::string_view token) {
 Controller::Controller(boost::asio::io_context &ioc): m_ioc(ioc),
     m_ssl_ctx(ssl::context::tlsv12_client), m_ws(ioc, m_ssl_ctx) {
     m_token = get_token_from_config();
-    reconnect();
 }
 
 bool Controller::is_open() {
@@ -101,10 +96,27 @@ void Controller::read_event() {
     }
 }
 
-void Controller::reconnect() {
+#ifdef DEBUG_SSL_CONNECTION
+std::mutex keylog_mutex;
+
+void ssl_keylog_callback(const SSL* /*ssl*/, const char* line)
+{
+    std::lock_guard<std::mutex> lock(keylog_mutex);
+
+    std::ofstream file("tls-keys.log", std::ios::app);
+    file << line << '\n';
+}
+#endif
+
+void Controller::connect() {
     tcp::resolver resolver{m_ioc};
     auto const endpoint = resolver.resolve(TV_HOST, TV_PORT, tcp::resolver::flags());
-    
+
+#ifdef DEBUG_SSL_CONNECTION
+    SSL *ssl = m_ws.next_layer().native_handle();
+    SSL_CTX* ssl_ctx = SSL_get_SSL_CTX(ssl);
+    SSL_CTX_set_keylog_callback(ssl_ctx, ssl_keylog_callback);
+#endif
     boost::asio::connect(beast::get_lowest_layer(m_ws), endpoint);
     
     m_ws.next_layer().handshake(ssl::stream_base::client);
@@ -122,6 +134,7 @@ void Controller::reconnect() {
     }
     m_ws.handshake(TV_HOST + ":" + TV_PORT, path);
     read_event();
+    heartbeat();
 }
 
 std::string key_to_string(Controller::Key key) {
@@ -177,4 +190,21 @@ void Controller::send_key(Controller::Key key) {
     std::string payload = json::serialize(volume_up);
     m_ws.text(true);
     m_ws.write(boost::asio::buffer(payload));
+}
+
+void Controller::heartbeat() {
+    m_ws.async_read(m_buffer, beast::bind_front_handler(&Controller::on_read, shared_from_this()));
+}
+
+
+void Controller::on_read(beast::error_code ec, std::size_t transfered) {
+    if (ec) {
+        return;
+    }
+    m_buffer.clear();
+    heartbeat();
+}
+
+void Controller::close() {
+    m_ws.close(beast::websocket::close_code::normal);
 }

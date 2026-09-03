@@ -5,6 +5,7 @@
 #include <array>
 #include <raylib.h>
 #include <string>
+#include <thread>
 
 constexpr int GRID_COLS = 7;
 constexpr int GRID_ROWS = 9;
@@ -78,8 +79,10 @@ int main() {
     w.SetTargetFPS(60);
     w.SetExitKey(KEY_NULL);
 
-    boost::asio::io_context ioc;
-    Controller c { ioc };
+    boost::asio::io_context ioc { 4 };
+    auto c = std::make_shared<Controller> (ioc);
+    c->connect();
+    std::jthread thread {[&ioc] {ioc.run();}};
 
     std::array<Button, 16> buttons = {
         Button {0, 0, Controller::Key::POWER,   KEY_P, std::string("assets/circle-power.png")},
@@ -100,13 +103,13 @@ int main() {
         Button {8, 4, Controller::Key::MENU,    KEY_S, std::string("assets/settings.png")},
     };
 
-    while (!w.ShouldClose() && c.is_open()) {
+    while (!w.ShouldClose() && c->is_open()) {
         try {
             int k = GetKeyPressed();
             w.BeginDrawing();
             w.ClearBackground(raylib::Color::RayWhite());
             for (auto &b : buttons) {
-                b.update(c, k);
+                b.update(*c, k);
                 b.draw();
             }
             w.EndDrawing();
@@ -114,5 +117,6 @@ int main() {
             TraceLog(LOG_ERROR, "Exception occurred %s", e.what());
         }
     }
+    c->close();
     return 0;
 }

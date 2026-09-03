@@ -1,19 +1,11 @@
 #include "controller.hpp"
-#include <boost/asio/ip/resolver_base.hpp>
 #include <boost/beast/core.hpp>
-#include <boost/beast/websocket.hpp>
-#include <boost/beast/websocket/ssl.hpp>
-#include <boost/asio/connect.hpp>
-#include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/ssl/stream.hpp>
 #include <boost/json.hpp>
-#include <boost/json/kind.hpp>
-#include <boost/json/object.hpp>
-#include <boost/json/parse.hpp>
-#include <boost/json/value.hpp>
 #include <iostream>
+#include <memory>
 #include <ncurses.h>
 #include <optional>
+#include <thread>
 #include <unordered_map>
 
 using tcp = boost::asio::ip::tcp;
@@ -138,29 +130,24 @@ int main(int argc, char *argv[]) {
     int cols = 13;
     printw("Press q to quit...\n");
     try {
-        boost::asio::io_context ioc;
-        Controller c {ioc};
-
-        while (true) {
-            if (!c.is_open()) {
-                c.reconnect();
-                if (!c.is_open()) {
-                    printw("Connection with TV lost, closing...");
-                    break;
-                }
-            }
+        boost::asio::io_context ioc { 4 };
+        auto c = std::make_shared<Controller> (ioc);
+        c->connect();
+        std::jthread thread {[&ioc] {ioc.run();}};
+        while (c->is_open()) {
             print_controller();
             int key = getch();
             if (key == 'q') break;
             auto cmd = parse_key(key);
             if (cmd) {
-                c.send_key(*cmd);
+                c->send_key(*cmd);
             }
         }
+        c->close();
     } 
     catch (std::exception const& e) {
-        std::cerr << "Fatal Execution Error: " << e.what() << std::endl;
         endwin();
+        std::cerr << "Fatal Execution Error: " << e.what() << std::endl;
         return EXIT_FAILURE;
     }
     endwin();
