@@ -168,6 +168,8 @@ std::string key_to_string(Controller::Key key) {
             return "KEY_CHUP";
         case CH_DOWN:
             return "KEY_CHDOWN";
+        case CH_LIST:
+            return "KEY_CH_LIST";
         case HOME:
             return "KEY_HOME";
         case MENU:

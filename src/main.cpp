@@ -84,12 +84,13 @@ int main() {
     c->connect();
     std::jthread thread {[&ioc] {ioc.run();}};
 
-    std::array<Button, 16> buttons = {
+    std::array<Button, 17> buttons = {
         Button {0, 0, Controller::Key::POWER,   KEY_P, std::string("assets/circle-power.png")},
         Button {2, 0, Controller::Key::VOL_UP,  KEY_EQUAL, std::string("assets/arrow-up.png")},
         Button {3, 0, Controller::Key::MUTE,    KEY_M, std::string("assets/volume-x.png")},
         Button {4, 0, Controller::Key::VOL_DOWN,KEY_MINUS, std::string("assets/arrow-down.png")},
         Button {2, 6, Controller::Key::CH_UP,   KEY_K, std::string("assets/arrow-up.png")},
+        Button {3, 6, Controller::Key::CH_LIST,    KEY_G, std::string("assets/tv.png")},
         Button {4, 6, Controller::Key::CH_DOWN, KEY_J, std::string("assets/arrow-down.png")},
         Button {2, 3, Controller::Key::UP,      KEY_UP, std::string("assets/circle-arrow-up.png")},
         Button {3, 2, Controller::Key::LEFT,    KEY_LEFT, std::string("assets/circle-arrow-left.png")},

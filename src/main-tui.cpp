@@ -15,7 +15,7 @@ const std::array<std::string, 11> pixels = {
     "│⏻          │",
     "│           │",
     "│        │",
-    "│󰝟      │",
+    "│󰝟      󰑈│",
     "│        │",
     "│           │",
     "│        │",
@@ -56,6 +56,7 @@ std::unordered_map<Pos, Controller::Key> postition_map = {
     {{6, 6}, Controller::Key::DOWN},
     {{7, 6}, Controller::Key::DOWN},
     {{11, 4}, Controller::Key::CH_UP},
+    {{11, 5}, Controller::Key::CH_LIST},
     {{11, 6}, Controller::Key::CH_DOWN},
     {{4, 8}, Controller::Key::BACK},
     {{6, 8}, Controller::Key::PLAY},
@@ -96,8 +97,10 @@ std::optional<Controller::Key> parse_key(int key) {
         return Controller::Key::VOL_DOWN;
     } else if (key == ' ') {
         return Controller::Key::PLAY;
-    }else if (key == 'z') {
+    } else if (key == 'z') {
         return Controller::Key::PAUSE;
+    } else if (key == 'g') {
+        return Controller::Key::CH_LIST;
     } else if (key == KEY_MOUSE && getmouse(&event) == OK) {
         Pos p{event.x, event.y };
         if (postition_map.contains(p)) {

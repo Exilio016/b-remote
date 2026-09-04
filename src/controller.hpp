@@ -38,6 +38,7 @@ public:
         VOL_DOWN, 
         CH_UP, 
         CH_DOWN,
+        CH_LIST,
         HOME,
         MENU
     };
