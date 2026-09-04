@@ -177,7 +177,7 @@ std::string key_to_string(Controller::Key key) {
 }
 
 void Controller::send_key(Controller::Key key) {
-    json::object volume_up = {
+    json::object obj = {
         {"method", "ms.remote.control"},
         {"params", {
                 {"Cmd", "Click"},
@@ -187,7 +187,7 @@ void Controller::send_key(Controller::Key key) {
             }
         }
     };
-    std::string payload = json::serialize(volume_up);
+    std::string payload = json::serialize(obj);
     m_ws.text(true);
     m_ws.write(boost::asio::buffer(payload));
 }

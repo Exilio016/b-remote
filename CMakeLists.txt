@@ -25,6 +25,7 @@ if (NOT raylib_cpp_FOUND)
     FetchContent_MakeAvailable(raylib_cpp)
 endif()
 
+
 add_library(b-controller-core src/controller.cpp)
 target_link_libraries(b-controller-core PRIVATE Boost::headers Boost::url Boost::json 
     OpenSSL::SSL OpenSSL::Crypto)
