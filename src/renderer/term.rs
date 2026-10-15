@@ -12,6 +12,7 @@ pub struct TermRenderer {
     running: bool,
     window: Window,
     error: Option<Error>,
+    has_drawn_error: bool
 }
 
 const GRID_ROWS: f32 = 9.0;
@@ -82,13 +83,13 @@ impl Renderer for TermRenderer {
         crosscurses::curs_set(0);
         window.keypad(true);
         crosscurses::mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, null_mut());
-        window.printw("Press q to quit...\n");
         let mut term = TermRenderer {
             buttons,
             assets,
             running: true,
             window,
             error: None,
+            has_drawn_error: false
         };
         term.draw();
         return term;
@@ -99,6 +100,9 @@ impl Renderer for TermRenderer {
     }
 
     fn update(&mut self, remote: &mut Option<Remote>) {
+        if self.error.is_some() && !self.has_drawn_error {
+            return;
+        }
         let keycode = self.get_keycode();
         let mut mevent: Option<MEVENT> = None;
         if keycode == 1 {
@@ -134,6 +138,8 @@ impl Renderer for TermRenderer {
             crosscurses::endwin();
             return;
         }
+        self.window.clear();
+        self.window.printw("Press q to quit...\n");
         match &self.error {
             None => {
                 let border = r#"┌────────────────┐
@@ -159,8 +165,10 @@ impl Renderer for TermRenderer {
                 self.window.refresh();
             },
             Some(e) => {
+                let error_msg = e.chain().map(|c| c.to_string()).collect::<Vec<_>>().join("\n");
                 self.window.mvprintw(1, 0, "Error");
-                self.window.mvprintw(2, 0, e.to_string());
+                self.window.mvprintw(2, 0, error_msg);
+                self.has_drawn_error = true;
             }
         }
     }

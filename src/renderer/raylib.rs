@@ -75,13 +75,13 @@ impl Renderer for RaylibRenderer {
             match asset {
                 Some(a) => {
                     let image = Image::load_image_from_mem(".png", a).with_context(|| {
-                        format!("Error loading image from asset {}", b.asset_name)
+                        format!("Error loading image from asset {}:", b.asset_name)
                     });
                     match image {
                         Ok(i) => {
                             let texture = h.load_texture_from_image(&t, &i).with_context(|| {
                                 format!(
-                                    "Error loading texture from image for asset {}",
+                                    "Error loading texture from image for asset {}:",
                                     b.asset_name
                                 )
                             });
@@ -160,7 +160,7 @@ impl Renderer for RaylibRenderer {
                         {
                             match r
                                 .send_key(&b.cmd)
-                                .with_context(|| "Failed to send key command to TV")
+                                .with_context(|| "Failed to send key command to TV:")
                             {
                                 Err(e) => {
                                     self.error = Some(e);
@@ -214,7 +214,7 @@ impl Renderer for RaylibRenderer {
                 let line_height = 28;
 
                 let mut lines = Vec::new();
-                let error_msg = e.to_string();
+                let error_msg = e.chain().map(|c| c.to_string()).collect::<Vec<_>>().join("\n");
                 let content = error_msg.split_whitespace();
                 let space_size = self.handle.measure_text(" ", 24);
                 let title_size = self.handle.measure_text("Error", 32);
@@ -235,6 +235,7 @@ impl Renderer for RaylibRenderer {
                         line = String::new();
                     }
                 }
+                lines.push(line);
 
                 let mut d = self.handle.begin_drawing(&self.thread);
                 d.clear_background(&bg);

@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use native_tls::{TlsConnector, TlsStream};
 use std::{fs::File, io::{Read, Write}, net::TcpStream, path::{Path, PathBuf}};
 use tungstenite::{Message, WebSocket, client};
@@ -115,19 +115,23 @@ impl Remote {
             url.push_str(&token.unwrap());
         }
 
-        let tcp = TcpStream::connect(format!("{}:{}", hostname, port))?;
+        let tcp = TcpStream::connect(format!("{}:{}", hostname, port))
+            .with_context(|| "Failed to connect to Samsung TV:")?;
         let connector = TlsConnector::builder()
             .danger_accept_invalid_hostnames(true)
             .danger_accept_invalid_certs(true)
-            .build()?;
-        let stream = connector.connect(&hostname, tcp)?;
-        let (mut socket, response) = client(url, stream)?;
+            .build()
+            .with_context(|| "Failed to connect to Samsung TV:")?;
+        let stream = connector.connect(&hostname, tcp)
+            .with_context(|| "Failed to connect to Samsung TV:")?;
+        let (mut socket, response) = client(url, stream)
+            .with_context(|| "Failed to connect to Samsung TV:")?;
         if response.status().is_client_error() || response.status().is_server_error() {
             let status = response.status();
             let str = String::from_utf8(response.into_body().unwrap_or_default()).unwrap_or_default();
             bail!("Failed to connect to TV: {} {}", status, str);
         }
-        let msg = socket.read()?;
+        let msg = socket.read().with_context(|| "Failed to connect to Samsung TV:")?;
         let parsed: WsMessage = serde_json::from_str(msg.into_text()?.as_str())?;
         if parsed.data.token.is_some() {
             Remote::set_token(&parsed.data.token.unwrap())?;
