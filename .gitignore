@@ -2,3 +2,7 @@
 .devenv.flake.nix
 .envrc
 build/
+
+# Added by cargo
+
+/target
