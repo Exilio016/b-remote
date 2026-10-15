@@ -1,3 +1,4 @@
+use anyhow::Result;
 use sola_raylib::ffi::KeyboardKey;
 
 use crate::remote::{Key, Remote};
@@ -8,16 +9,23 @@ use crate::renderer::raylib::RaylibRenderer;
 mod remote;
 mod renderer;
 
-fn app(renderer:&mut impl Renderer, remote: &mut Remote) {
+fn app(renderer:&mut impl Renderer, remote:Result<Remote>) {
+    let mut r = None;
+    match remote {
+        Err(e) => {
+            renderer.display_error(e);
+        }
+        Ok(rem) => r = Some(rem) 
+    }
     while renderer.is_running() {
-        renderer.update(remote);
+        renderer.update(&mut r);
         renderer.draw();
     }
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let mut remote = Remote::new().unwrap();
+    let remote = Remote::new();
     let buttons: [Button; 17] = [
         Button { x: 0, y: 0, cmd: Key::Power,   shortcut: KeyboardKey::KEY_P as u32, asset_name: "circle-power".into()},
         Button { x: 0, y: 2, cmd: Key::VolUp,   shortcut: KeyboardKey::KEY_EQUAL as u32, asset_name: "arrow-up".into()},
@@ -39,10 +47,10 @@ fn main() {
     ];
     if args.contains(&"--tui".to_owned()) {
         let mut r = TermRenderer::new(buttons);
-        app(&mut r, &mut remote);
+        app(&mut r, remote);
     }
     else {
         let mut r = RaylibRenderer::new(buttons);
-        app(&mut r, &mut remote);
+        app(&mut r, remote);
     }
 }

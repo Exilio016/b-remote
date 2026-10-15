@@ -1,3 +1,5 @@
+use anyhow::Error;
+
 use crate::remote::{Key, Remote};
 
 pub mod raylib;
@@ -14,6 +16,7 @@ pub struct Button {
 pub trait Renderer {
     fn new(buttons: [Button;17]) -> Self;
     fn is_running(&self) -> bool;
-    fn update(&mut self, remote: &mut Remote);
+    fn update(&mut self, remote: &mut Option<Remote>);
     fn draw(&mut self);
+    fn display_error(&mut self, error: Error);
 }

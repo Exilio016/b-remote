@@ -1,5 +1,6 @@
+use anyhow::Error;
 use crosscurses::{ALL_MOUSE_EVENTS, Input, MEVENT, REPORT_MOUSE_POSITION, Window, initscr};
-use std::{collections::HashMap, ptr::{null_mut}};
+use std::{collections::HashMap, ptr::null_mut};
 
 use crate::{remote::Remote, renderer::Renderer};
 
@@ -10,6 +11,7 @@ pub struct TermRenderer {
     assets: HashMap<String, char>,
     running: bool,
     window: Window,
+    error: Option<Error>,
 }
 
 const GRID_ROWS: f32 = 9.0;
@@ -86,6 +88,7 @@ impl Renderer for TermRenderer {
             assets,
             running: true,
             window,
+            error: None,
         };
         term.draw();
         return term;
@@ -95,24 +98,33 @@ impl Renderer for TermRenderer {
         return self.running;
     }
 
-    fn update(&mut self, remote: &mut Remote) {
+    fn update(&mut self, remote: &mut Option<Remote>) {
         let keycode = self.get_keycode();
         let mut mevent: Option<MEVENT> = None;
         if keycode == 1 {
             mevent = Some(crosscurses::getmouse().unwrap());
         }
-        for b in &self.buttons {
-            let (x, y) = b.find_grid_pos();
-            if keycode == 'Q' as u32 {
-                self.running = false;
-            }
-            if keycode == b.shortcut
-                || (mevent.is_some() && x == mevent.unwrap().x && y == mevent.unwrap().y)
-            {
-                remote.send_key(&b.cmd).unwrap();
+        if keycode == 'Q' as u32 {
+            self.running = false;
+        }
+        if self.error.is_none() {
+            match remote {
+                Some(remote) => {
+                    for b in &self.buttons {
+                        let (x, y) = b.find_grid_pos();
+                        if keycode == b.shortcut
+                            || (mevent.is_some()
+                                && x == mevent.unwrap().x
+                                && y == mevent.unwrap().y)
+                        {
+                            remote.send_key(&b.cmd).unwrap();
+                        }
+                    }
+                    remote.ping().unwrap();
+                }
+                None => {}
             }
         }
-        remote.ping().unwrap();
     }
 
     fn draw(&mut self) {
@@ -122,7 +134,9 @@ impl Renderer for TermRenderer {
             crosscurses::endwin();
             return;
         }
-        let border = r#"┌────────────────┐
+        match &self.error {
+            None => {
+                let border = r#"┌────────────────┐
 │                │
 │                │
 │                │
@@ -132,14 +146,26 @@ impl Renderer for TermRenderer {
 │                │
 │                │
 │                │
-└────────────────┘
-        "#;
-        self.window.mvprintw(1, 0, border);
-        for b in &self.buttons {
-            let (x, y) = b.find_grid_pos();
-            self.window
-                .mvprintw(y, x, format!("{}", self.assets.get(&b.asset_name).unwrap()));
+└────────────────┘"#;
+                self.window.mvprintw(1, 0, border);
+                for b in &self.buttons {
+                    let (x, y) = b.find_grid_pos();
+                    self.window.mvprintw(
+                        y,
+                        x,
+                        format!("{}", self.assets.get(&b.asset_name).unwrap()),
+                    );
+                }
+                self.window.refresh();
+            },
+            Some(e) => {
+                self.window.mvprintw(1, 0, "Error");
+                self.window.mvprintw(2, 0, e.to_string());
+            }
         }
-        self.window.refresh();
+    }
+
+    fn display_error(&mut self, error: Error) {
+        self.error = Some(error);
     }
 }
