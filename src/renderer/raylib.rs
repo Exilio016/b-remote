@@ -128,8 +128,8 @@ impl Renderer for RaylibRenderer {
             Some(_) => {
                 self.handle.set_window_size(W_WIDTH_ERR, W_HEIGHT_ERR);
                 let btn_text_size = self.handle.measure_text("Close", 24);
-                let x = (W_WIDTH_ERR / 2 - (btn_text_size / 2 + 2)) as f32;
-                let y = (W_HEIGHT_ERR - 40) as f32;
+                let x = (W_WIDTH_ERR / 2 - (btn_text_size / 2 + 10)) as f32;
+                let y = (W_HEIGHT_ERR - 80) as f32;
                 let width = (btn_text_size + 4) as f32;
                 let height = 28.0;
 
@@ -144,46 +144,44 @@ impl Renderer for RaylibRenderer {
                     }
                 }
             }
-            None => {
-                match remote {
-                    Some(r) => {
-                        if self.clicked_frames > 0 {
-                            self.clicked_frames -= 1;
-                        }
-                        let key = self
-                            .handle
-                            .get_key_pressed()
-                            .map(|k| k as u32)
-                            .unwrap_or_default();
-                        for (i, b) in self.buttons.iter().enumerate() {
-                            if (b.clicked(&self.handle) && self.clicked_frames == 0)
-                                || (key == b.shortcut)
+            None => match remote {
+                Some(r) => {
+                    if self.clicked_frames > 0 {
+                        self.clicked_frames -= 1;
+                    }
+                    let key = self
+                        .handle
+                        .get_key_pressed()
+                        .map(|k| k as u32)
+                        .unwrap_or_default();
+                    for (i, b) in self.buttons.iter().enumerate() {
+                        if (b.clicked(&self.handle) && self.clicked_frames == 0)
+                            || (key == b.shortcut)
+                        {
+                            match r
+                                .send_key(&b.cmd)
+                                .with_context(|| "Failed to send key command to TV")
                             {
-                                match r
-                                    .send_key(&b.cmd)
-                                    .with_context(|| "Failed to send key command to TV")
-                                {
-                                    Err(e) => {
-                                        self.error = Some(e);
-                                        break;
-                                    }
-                                    _ => {
-                                        self.clicked_frames = 15;
-                                        self.clicked_index = i;
-                                    }
+                                Err(e) => {
+                                    self.error = Some(e);
+                                    break;
+                                }
+                                _ => {
+                                    self.clicked_frames = 15;
+                                    self.clicked_index = i;
                                 }
                             }
                         }
-                        if self.error.is_none() {
-                            match r.ping() {
-                                Err(e) => self.error = Some(e),
-                                _ => {}
-                            }
+                    }
+                    if self.error.is_none() {
+                        match r.ping() {
+                            Err(e) => self.error = Some(e),
+                            _ => {}
                         }
                     }
-                    None => {}
                 }
-            }
+                None => {}
+            },
         }
     }
 
@@ -208,9 +206,36 @@ impl Renderer for RaylibRenderer {
                 }
             }
             Some(e) => {
+                let start_y = 80;
+                let end_y = W_HEIGHT_ERR - 120;
+                let start_x = 20;
+                let end_x = W_WIDTH_ERR - 40;
+                let line_width = end_x - start_x + 1;
+                let line_height = 28;
+
+                let mut lines = Vec::new();
+                let error_msg = e.to_string();
+                let content = error_msg.split_whitespace();
+                let space_size = self.handle.measure_text(" ", 24);
                 let title_size = self.handle.measure_text("Error", 32);
-                let content_size = self.handle.measure_text(&e.to_string(), 24);
                 let btn_text_size = self.handle.measure_text("Close", 24);
+
+                let mut line = String::new();
+                let mut remaining = line_width;
+                for word in content {
+                    let size = self.handle.measure_text(word, 24);
+                    if size + space_size < remaining {
+                        line.push_str(word);
+                        line.push(' ');
+                        remaining -= size;
+                        remaining -= space_size;
+                    } else {
+                        remaining = line_width;
+                        lines.push(line);
+                        line = String::new();
+                    }
+                }
+
                 let mut d = self.handle.begin_drawing(&self.thread);
                 d.clear_background(&bg);
                 d.draw_text(
@@ -220,24 +245,30 @@ impl Renderer for RaylibRenderer {
                     32,
                     Color::WHITE,
                 );
-                d.draw_text(
-                    &e.to_string(),
-                    W_WIDTH_ERR / 2 - content_size / 2,
-                    60,
-                    24,
-                    Color::WHITE,
-                );
+                for (i, line) in lines.iter().enumerate() {
+                    let y = start_y + (i as i32 * line_height);
+                    if y > end_y {
+                        break;
+                    }
+                    d.draw_text(
+                        &line,
+                        start_x,
+                        y,
+                        24,
+                        Color::WHITE,
+                    );
+                }
                 d.draw_rectangle(
-                    W_WIDTH_ERR / 2 - (btn_text_size / 2 + 2),
-                    W_HEIGHT_ERR - 40,
-                    btn_text_size + 4,
-                    28,
+                    W_WIDTH_ERR / 2 - (btn_text_size / 2 + 10),
+                    W_HEIGHT_ERR - 80,
+                    btn_text_size + 20,
+                    34,
                     btn_color,
                 );
                 d.draw_text(
                     "Close",
                     W_WIDTH_ERR / 2 - (btn_text_size / 2),
-                    W_HEIGHT_ERR - 40,
+                    W_HEIGHT_ERR - 75,
                     24,
                     Color::WHITE,
                 );
