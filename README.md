@@ -1,6 +1,8 @@
 # bController
 
 A Samsung TV remote controller written in Rust with both terminal (TUI) and graphical (raylib) interfaces.
+<img width="1042" height="547" alt="image" src="https://github.com/user-attachments/assets/eb34b61c-7de6-41b7-a8d9-f26628f813e2" />
+<img width="633" height="317" alt="image" src="https://github.com/user-attachments/assets/782cbbc8-5dd3-440b-a7b5-5b72d4d4ccd8" />
 
 ## Features
 
