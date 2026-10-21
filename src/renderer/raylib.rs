@@ -3,7 +3,7 @@ use sola_raylib::prelude::*;
 
 use crate::{
     remote::Remote,
-    renderer::{Button, Renderer},
+    renderer::{Button, KeyCode, Renderer},
 };
 
 pub struct RaylibRenderer {
@@ -33,28 +33,57 @@ fn get_asset(name: &str) -> Option<&'static [u8]> {
     ASSET_MAP.iter().find(|&&(k, _)| k == name).map(|&(_, v)| v)
 }
 
-fn button_group(index: usize) -> u8 {
-    match index {
-        0 => 0, // Power
-        1..=3 => 1, // Volume group
-        4..=6 => 2, // Channel group
-        7..=11 => 3, // Navigation group
-        12..=14 => 4, // Back/Enter/Play
-        15..=16 => 6, // Home/Menu
-        _ => 7,
+struct ButtonGroup(u8);
+
+impl ButtonGroup {
+    pub fn new(index: usize) -> Self {
+        let val = match index {
+            0 => 0,       // Power
+            1..=3 => 1,   // Volume group
+            4..=6 => 2,   // Channel group
+            7..=11 => 3,  // Navigation group
+            12..=14 => 4, // Back/Enter/Play
+            15..=16 => 6, // Home/Menu
+            _ => 7,
+        };
+        return ButtonGroup(val);
+    }
+
+    pub fn color(&self) -> Color {
+        match self.0 {
+            0 => Color::new(180, 40, 40, 255),   // Power - red accent
+            1 => Color::new(40, 120, 180, 255),  // Volume - blue
+            2 => Color::new(180, 120, 40, 255),  // Channel - amber
+            3 => Color::new(60, 140, 80, 255),   // Navigation - green
+            4 => Color::new(140, 60, 140, 255),  // Back/Enter/Play - purple
+            5 => Color::new(40, 140, 140, 255),  // Play/Pause - cyan
+            6 => Color::new(120, 120, 120, 255), // Home/Menu - neutral
+            _ => Color::new(80, 80, 80, 255),
+        }
     }
 }
 
-fn group_color(group: u8) -> Color {
-    match group {
-        0 => Color::new(180, 40, 40, 255),    // Power - red accent
-        1 => Color::new(40, 120, 180, 255),   // Volume - blue
-        2 => Color::new(180, 120, 40, 255),   // Channel - amber
-        3 => Color::new(60, 140, 80, 255),    // Navigation - green
-        4 => Color::new(140, 60, 140, 255),   // Back/Enter/Play - purple
-        5 => Color::new(40, 140, 140, 255),   // Play/Pause - cyan
-        6 => Color::new(120, 120, 120, 255),  // Home/Menu - neutral
-        _ => Color::new(80, 80, 80, 255),
+impl KeyCode {
+    pub fn to_raylib(&self) -> KeyboardKey {
+        match self {
+            KeyCode::Equal => KeyboardKey::KEY_EQUAL,
+            KeyCode::Minus => KeyboardKey::KEY_MINUS,
+            KeyCode::Up => KeyboardKey::KEY_UP,
+            KeyCode::Down => KeyboardKey::KEY_DOWN,
+            KeyCode::Left => KeyboardKey::KEY_LEFT,
+            KeyCode::Right => KeyboardKey::KEY_RIGHT,
+            KeyCode::Space => KeyboardKey::KEY_SPACE,
+            KeyCode::Escape => KeyboardKey::KEY_ESCAPE,
+            KeyCode::Enter => KeyboardKey::KEY_ENTER,
+            KeyCode::M => KeyboardKey::KEY_M,
+            KeyCode::P => KeyboardKey::KEY_P,
+            KeyCode::H => KeyboardKey::KEY_H,
+            KeyCode::J => KeyboardKey::KEY_J,
+            KeyCode::K => KeyboardKey::KEY_K,
+            KeyCode::Z => KeyboardKey::KEY_Z,
+            KeyCode::S => KeyboardKey::KEY_S,
+            KeyCode::L => KeyboardKey::KEY_L,
+        }
     }
 }
 
@@ -76,7 +105,10 @@ impl Button {
     fn is_hovered(&self, rl: &RaylibHandle) -> bool {
         let rec = self.find_grid_position();
         let pos = rl.get_mouse_position();
-        pos.x > rec.x && pos.x < (rec.x + rec.width) && pos.y > rec.y && pos.y < (rec.y + rec.height)
+        pos.x > rec.x
+            && pos.x < (rec.x + rec.width)
+            && pos.y > rec.y
+            && pos.y < (rec.y + rec.height)
     }
 
     fn find_grid_position(&self) -> Rectangle {
@@ -95,7 +127,9 @@ impl Button {
         let cell = self.find_grid_position();
         // Source icons are 24x24; don't upscale beyond that to avoid pixelation
         let max_icon_size = 24.0;
-        let icon_size = (cell.width.min(cell.height) - CELL_PADDING * 2.0).min(max_icon_size).max(16.0);
+        let icon_size = (cell.width.min(cell.height) - CELL_PADDING * 2.0)
+            .min(max_icon_size)
+            .max(16.0);
         Rectangle::new(
             cell.x + (cell.width - icon_size) / 2.0,
             cell.y + (cell.height - icon_size) / 2.0,
@@ -209,15 +243,11 @@ impl Renderer for RaylibRenderer {
                     }
 
                     // Handle shortcut keys and mouse clicks
-                    let key = self
-                        .handle
-                        .get_key_pressed()
-                        .map(|k| k as u32)
-                        .unwrap_or_default();
+                    let key = self.handle.get_key_pressed().unwrap_or(KeyboardKey::KEY_NULL);
 
                     for (i, b) in self.buttons.iter().enumerate() {
                         let mouse_clicked = b.clicked(&self.handle) && self.clicked_frames == 0;
-                        let shortcut_pressed = key == b.shortcut;
+                        let shortcut_pressed = key == b.shortcut.to_raylib();
 
                         if mouse_clicked || shortcut_pressed {
                             match r
@@ -261,8 +291,8 @@ impl Renderer for RaylibRenderer {
                 // Draw subtle grid group backgrounds
                 for i in 0..self.buttons.len() {
                     let cell = self.buttons[i].find_grid_position();
-                    let group = button_group(i);
-                    let group_col = group_color(group);
+                    let group = ButtonGroup::new(i);
+                    let group_col = group.color();
                     let group_bg = Color::new(
                         (group_col.r as f32 * 0.08 + btn_base.r as f32 * 0.92) as u8,
                         (group_col.g as f32 * 0.08 + btn_base.g as f32 * 0.92) as u8,
@@ -270,7 +300,12 @@ impl Renderer for RaylibRenderer {
                         255,
                     );
                     d.draw_rectangle_rounded(
-                        Rectangle::new(cell.x + 1.0, cell.y + 1.0, cell.width - 2.0, cell.height - 2.0),
+                        Rectangle::new(
+                            cell.x + 1.0,
+                            cell.y + 1.0,
+                            cell.width - 2.0,
+                            cell.height - 2.0,
+                        ),
                         CORNER_RADIUS,
                         8,
                         &group_bg,
@@ -281,8 +316,8 @@ impl Renderer for RaylibRenderer {
                 for i in 0..self.buttons.len() {
                     let cell = self.buttons[i].find_grid_position();
                     let icon_rect = self.buttons[i].icon_rect();
-                    let group = button_group(i);
-                    let group_col = group_color(group);
+                    let group = ButtonGroup::new(i);
+                    let group_col = group.color();
 
                     let is_clicked = self.clicked_frames > 0 && self.clicked_index == i;
                     let is_hovered = self.hover_index == Some(i);
@@ -302,7 +337,12 @@ impl Renderer for RaylibRenderer {
                     };
 
                     d.draw_rectangle_rounded(
-                        Rectangle::new(cell.x + 1.0, cell.y + 1.0, cell.width - 2.0, cell.height - 2.0),
+                        Rectangle::new(
+                            cell.x + 1.0,
+                            cell.y + 1.0,
+                            cell.width - 2.0,
+                            cell.height - 2.0,
+                        ),
                         CORNER_RADIUS,
                         8,
                         &bg_color,
@@ -337,7 +377,6 @@ impl Renderer for RaylibRenderer {
                         );
                     }
                 }
-
             }
             Some(e) => {
                 let start_y = 80;
@@ -346,7 +385,11 @@ impl Renderer for RaylibRenderer {
                 let end_x = W_WIDTH_ERR - 40;
                 let line_height = 28;
 
-                let error_msg = e.chain().map(|c| c.to_string()).collect::<Vec<_>>().join("\n");
+                let error_msg = e
+                    .chain()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 let lines_raw: Vec<&str> = error_msg.lines().collect();
                 let mut lines = Vec::new();
                 let space_size = self.handle.measure_text(" ", 24);
@@ -396,13 +439,7 @@ impl Renderer for RaylibRenderer {
                     if y > end_y {
                         break;
                     }
-                    d.draw_text(
-                        &line,
-                        start_x,
-                        y,
-                        24,
-                        Color::WHITE,
-                    );
+                    d.draw_text(&line, start_x, y, 24, Color::WHITE);
                 }
                 d.draw_rectangle(
                     W_WIDTH_ERR / 2 - (btn_text_size / 2 + 10),
@@ -434,3 +471,4 @@ impl Renderer for RaylibRenderer {
         }
     }
 }
+

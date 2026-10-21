@@ -2,7 +2,7 @@ use anyhow::Error;
 use crosscurses::{ALL_MOUSE_EVENTS, Input, MEVENT, REPORT_MOUSE_POSITION, Window, initscr};
 use std::{collections::HashMap, ptr::null_mut};
 
-use crate::{remote::Remote, renderer::Renderer};
+use crate::{remote::Remote, renderer::{KeyCode, Renderer}};
 
 use super::Button;
 
@@ -28,6 +28,30 @@ impl Button {
             2 + (self.x as f32 * cell_width) as i32,
             3 + (self.y as f32 * cell_height) as i32,
         );
+    }
+}
+
+impl KeyCode {
+    pub fn to_crossterm(&self) -> Input {
+        match self {
+            KeyCode::Equal => Input::Character('='),
+            KeyCode::Minus => Input::Character('-'),
+            KeyCode::Up => Input::KeyUp,
+            KeyCode::Down => Input::KeyDown,
+            KeyCode::Left => Input::KeyLeft,
+            KeyCode::Right => Input::KeyRight,
+            KeyCode::Space => Input::Character(' '),
+            KeyCode::Escape => Input::Character('\u{1b}'),
+            KeyCode::Enter => Input::Character('\n'),
+            KeyCode::M => Input::Character('M'),
+            KeyCode::P => Input::Character('P'),
+            KeyCode::H => Input::Character('H'),
+            KeyCode::J => Input::Character('J'),
+            KeyCode::K => Input::Character('K'),
+            KeyCode::Z => Input::Character('Z'),
+            KeyCode::S => Input::Character('S'),
+            KeyCode::L => Input::Character('L'),
+        }
     }
 }
 
@@ -76,18 +100,19 @@ impl Renderer for TermRenderer {
         }
         let keycode = self.get_keycode();
         let mut mevent: Option<MEVENT> = None;
-        if keycode == 1 {
+        if keycode == Input::KeyMouse {
             mevent = Some(crosscurses::getmouse().unwrap());
         }
-        if keycode == 'Q' as u32 || keycode == 'q' as u32 {
+        else if keycode == Input::Character('Q') {
             self.running = false;
         }
+
         if self.error.is_none() {
             match remote {
                 Some(remote) => {
                     for b in &self.buttons {
                         let (x, y) = b.find_grid_pos();
-                        if keycode == b.shortcut
+                        if keycode == b.shortcut.to_crossterm()
                             || (mevent.is_some()
                                 && x == mevent.unwrap().x
                                 && y == mevent.unwrap().y)
@@ -129,7 +154,7 @@ impl Renderer for TermRenderer {
                 self.window.mvprintw(
                     legend_y,
                     0,
-                    "P=Power  +=VolUp  M=Mute  -=VolDown  K=ChUp  G=ChList  J=ChDown",
+                    "P=Power  +=VolUp  M=Mute  -=VolDown  K=ChUp  L=ChList  J=ChDown",
                 );
                 self.window.mvprintw(
                     legend_y + 1,
@@ -164,29 +189,26 @@ impl Renderer for TermRenderer {
 }
 
 impl TermRenderer {
-    fn get_keycode(&self) -> u32 {
+    fn get_keycode(&self) -> Input {
         let key = self.window.getch();
         let keycode = match key {
-            Some(Input::Character(c)) => {
-                if c == '\n' {
-                    257
-                } else if c == '\u{1b}' {
-                    256
-                } else if c == '+' {
-                    '=' as u32
-                } else if c == '_' {
-                    '-' as u32
-                } else {
-                    c.to_ascii_uppercase() as u32
+            Some(input) => {
+                match input {
+                    Input::Character(c) => {
+                        if c == '_' {
+                            Input::Character('-')
+                        }
+                        else if c == '+' {
+                            Input::Character('=')
+                        }
+                        else {
+                            Input::Character(c.to_ascii_uppercase())
+                        }
+                    },
+                    _ => input,
                 }
-            }
-            Some(Input::KeyUp) => 265,
-            Some(Input::KeyLeft) => 263,
-            Some(Input::KeyEnter) => 257,
-            Some(Input::KeyRight) => 262,
-            Some(Input::KeyDown) => 264,
-            Some(Input::KeyMouse) => 1,
-            _ => 0,
+            },
+            None => Input::KeyCancel,
         };
         return keycode;
     }
