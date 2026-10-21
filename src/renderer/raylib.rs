@@ -2,8 +2,7 @@ use anyhow::{Context, Error};
 use sola_raylib::prelude::*;
 
 use crate::{
-    remote::Remote,
-    renderer::{Button, KeyCode, Renderer},
+    remote::Remote, renderer::{Asset, Button, KeyCode, Position, Renderer},
 };
 
 pub struct RaylibRenderer {
@@ -29,8 +28,11 @@ const CELL_PADDING: f32 = 4.0;
 const CORNER_RADIUS: f32 = 0.25;
 
 include!(concat!(env!("OUT_DIR"), "/asset_map.rs"));
-fn get_asset(name: &str) -> Option<&'static [u8]> {
-    ASSET_MAP.iter().find(|&&(k, _)| k == name).map(|&(_, v)| v)
+impl Asset {
+    fn get_bytes(&self) -> Option<&'static [u8]> {
+        let name = &self.0;
+        ASSET_MAP.iter().find(|&&(k, _)| k == name).map(|&(_, v)| v)
+    }
 }
 
 struct ButtonGroup(u8);
@@ -87,9 +89,23 @@ impl KeyCode {
     }
 }
 
+impl Position {
+    fn find_grid_position(&self) -> Rectangle {
+        let cell_width = (W_WIDTH / GRID_COLS) as f32;
+        let cell_height = (W_HEIGHT / GRID_ROWS) as f32;
+
+        return Rectangle::new(
+            self.x as f32 * cell_width,
+            self.y as f32 * cell_height,
+            cell_width,
+            cell_height,
+        );
+    }
+}
+
 impl Button {
     fn clicked(&self, rl: &RaylibHandle) -> bool {
-        let rec = self.find_grid_position();
+        let rec = self.pos.find_grid_position();
         if !rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT)
             && !(rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT))
         {
@@ -103,7 +119,7 @@ impl Button {
     }
 
     fn is_hovered(&self, rl: &RaylibHandle) -> bool {
-        let rec = self.find_grid_position();
+        let rec = self.pos.find_grid_position();
         let pos = rl.get_mouse_position();
         pos.x > rec.x
             && pos.x < (rec.x + rec.width)
@@ -111,20 +127,9 @@ impl Button {
             && pos.y < (rec.y + rec.height)
     }
 
-    fn find_grid_position(&self) -> Rectangle {
-        let cell_width = (W_WIDTH / GRID_COLS) as f32;
-        let cell_height = (W_HEIGHT / GRID_ROWS) as f32;
-
-        return Rectangle::new(
-            self.x as f32 * cell_width,
-            self.y as f32 * cell_height,
-            cell_width,
-            cell_height,
-        );
-    }
 
     fn icon_rect(&self) -> Rectangle {
-        let cell = self.find_grid_position();
+        let cell = self.pos.find_grid_position();
         // Source icons are 24x24; don't upscale beyond that to avoid pixelation
         let max_icon_size = 24.0;
         let icon_size = (cell.width.min(cell.height) - CELL_PADDING * 2.0)
@@ -153,18 +158,18 @@ impl Renderer for RaylibRenderer {
         let mut assets = Vec::new();
         let mut error = None;
         for b in &buttons {
-            let asset = get_asset(&b.asset_name);
+            let asset = &b.asset.get_bytes();
             match asset {
                 Some(a) => {
                     let image = Image::load_image_from_mem(".png", a).with_context(|| {
-                        format!("Error loading image from asset {}:", b.asset_name)
+                        format!("Error loading image from asset {}:", b.asset.name())
                     });
                     match image {
                         Ok(i) => {
                             let texture = h.load_texture_from_image(&t, &i).with_context(|| {
                                 format!(
                                     "Error loading texture from image for asset {}:",
-                                    b.asset_name
+                                    b.asset.name()
                                 )
                             });
                             match texture {
@@ -182,7 +187,7 @@ impl Renderer for RaylibRenderer {
                     }
                 }
                 None => {
-                    error = Some(anyhow::anyhow!("Could not load asset {}", b.asset_name));
+                    error = Some(anyhow::anyhow!("Could not load asset {}", b.asset.name()));
                     break;
                 }
             }
@@ -243,7 +248,10 @@ impl Renderer for RaylibRenderer {
                     }
 
                     // Handle shortcut keys and mouse clicks
-                    let key = self.handle.get_key_pressed().unwrap_or(KeyboardKey::KEY_NULL);
+                    let key = self
+                        .handle
+                        .get_key_pressed()
+                        .unwrap_or(KeyboardKey::KEY_NULL);
 
                     for (i, b) in self.buttons.iter().enumerate() {
                         let mouse_clicked = b.clicked(&self.handle) && self.clicked_frames == 0;
@@ -290,7 +298,7 @@ impl Renderer for RaylibRenderer {
 
                 // Draw subtle grid group backgrounds
                 for i in 0..self.buttons.len() {
-                    let cell = self.buttons[i].find_grid_position();
+                    let cell = self.buttons[i].pos.find_grid_position();
                     let group = ButtonGroup::new(i);
                     let group_col = group.color();
                     let group_bg = Color::new(
@@ -314,7 +322,7 @@ impl Renderer for RaylibRenderer {
 
                 // Draw buttons
                 for i in 0..self.buttons.len() {
-                    let cell = self.buttons[i].find_grid_position();
+                    let cell = self.buttons[i].pos.find_grid_position();
                     let icon_rect = self.buttons[i].icon_rect();
                     let group = ButtonGroup::new(i);
                     let group_col = group.color();
@@ -471,4 +479,3 @@ impl Renderer for RaylibRenderer {
         }
     }
 }
-

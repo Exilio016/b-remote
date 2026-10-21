@@ -5,12 +5,27 @@ use crate::remote::{Key, Remote};
 pub mod raylib;
 pub mod term;
 
-pub struct Button {
+pub struct Position {
     pub x: i32,
     pub y: i32,
+}
+
+pub struct Asset(String);
+
+impl Asset {
+    pub fn new(name: String) -> Self {
+        Asset(name)
+    }
+    pub fn name(&self) -> &str {
+        return self.0.as_str();
+    }
+}
+
+pub struct Button {
+    pub pos: Position,
     pub cmd: Key,
     pub shortcut: KeyCode,
-    pub asset_name: String
+    pub asset: Asset,
 }
 
 pub trait Renderer {

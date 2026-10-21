@@ -1,14 +1,13 @@
 use anyhow::Error;
 use crosscurses::{ALL_MOUSE_EVENTS, Input, MEVENT, REPORT_MOUSE_POSITION, Window, initscr};
-use std::{collections::HashMap, ptr::null_mut};
+use std::{ptr::null_mut};
 
-use crate::{remote::Remote, renderer::{KeyCode, Renderer}};
+use crate::{remote::Remote, renderer::{Asset, KeyCode, Position, Renderer}};
 
 use super::Button;
 
 pub struct TermRenderer {
     buttons: [Button; 17],
-    assets: HashMap<String, char>,
     running: bool,
     window: Window,
     error: Option<Error>,
@@ -20,7 +19,7 @@ const GRID_COLS: f32 = 7.0;
 const W_WIDTH: f32 = 15.0;
 const W_HEIGHT: f32 = 8.0;
 
-impl Button {
+impl Position {
     fn find_grid_pos(&self) -> (i32, i32) {
         let cell_width = W_WIDTH / GRID_COLS;
         let cell_height = W_HEIGHT / GRID_ROWS;
@@ -55,32 +54,37 @@ impl KeyCode {
     }
 }
 
+impl Asset {
+    pub fn get_char(&self) -> char {
+        match self.name() {
+            "circle-power" => '⏻',
+            "arrow-up" => '▲',
+            "volume-x" => '🔇',
+            "arrow-down" => '▼',
+            "tv" => '📺',
+            "circle-arrow-up" => '▲',
+            "circle-arrow-left" => '◄',
+            "circle" => '●',
+            "circle-arrow-right" => '►',
+            "circle-arrow-down" => '▼',
+            "undo-2" => '↩',
+            "play" => '▶',
+            "pause" => '⏸',
+            "house" => '⌂',
+            "settings" => '⚙',
+            _ => '?'
+        }
+    }
+}
+
 impl Renderer for TermRenderer {
     fn new(buttons: [Button; 17]) -> Self {
-        let assets = HashMap::from([
-            ("circle-power".to_owned(), '⏻'),
-            ("arrow-up".to_owned(), '▲'),
-            ("volume-x".to_owned(), '🔇'),
-            ("arrow-down".to_owned(), '▼'),
-            ("tv".to_owned(), '📺'),
-            ("circle-arrow-up".to_owned(), '▲'),
-            ("circle-arrow-left".to_owned(), '◄'),
-            ("circle".to_owned(), '●'),
-            ("circle-arrow-right".to_owned(), '►'),
-            ("circle-arrow-down".to_owned(), '▼'),
-            ("undo-2".to_owned(), '↩'),
-            ("play".to_owned(), '▶'),
-            ("pause".to_owned(), '⏸'),
-            ("house".to_owned(), '⌂'),
-            ("settings".to_owned(), '⚙'),
-        ]);
         let window = initscr();
         crosscurses::curs_set(0);
         window.keypad(true);
         crosscurses::mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, null_mut());
         let mut term = TermRenderer {
             buttons,
-            assets,
             running: true,
             window,
             error: None,
@@ -111,7 +115,7 @@ impl Renderer for TermRenderer {
             match remote {
                 Some(remote) => {
                     for b in &self.buttons {
-                        let (x, y) = b.find_grid_pos();
+                        let (x, y) = b.pos.find_grid_pos();
                         if keycode == b.shortcut.to_crossterm()
                             || (mevent.is_some()
                                 && x == mevent.unwrap().x
@@ -144,8 +148,8 @@ impl Renderer for TermRenderer {
 
                 // Draw buttons
                 for b in &self.buttons {
-                    let (x, y) = b.find_grid_pos();
-                    let ch = self.assets.get(&b.asset_name).copied().unwrap_or('?');
+                    let (x, y) = b.pos.find_grid_pos();
+                    let ch = b.asset.get_char();
                     self.window.mvprintw(y, x, &format!("{}", ch));
                 }
 
