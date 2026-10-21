@@ -104,7 +104,7 @@ impl Remote {
     pub fn new() -> Result<Remote> {
         let hostname = "Samsung.local";
         let port = 8002;
-        let name = "Yi1jb250cm9sbGVy";
+        let name = "Yi1yZW1vdGU=";
         let mut url = format!(
             "wss://{}:{}/api/v2/channels/samsung.remote.control?name={}",
             hostname, port, name
