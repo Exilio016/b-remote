@@ -147,7 +147,7 @@ impl Renderer for RaylibRenderer {
     fn new(buttons: [Button; 17]) -> RaylibRenderer {
         let (mut h, t) = sola_raylib::init()
             .size(W_WIDTH, W_HEIGHT)
-            .title("bController")
+            .title("b-remote")
             .vsync()
             .build();
         let mut assets = Vec::new();

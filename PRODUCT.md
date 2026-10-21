@@ -66,7 +66,6 @@ The only Samsung TV remote that is a **native cross-platform Rust binary** with 
 
 ## Brand Commitments
 
-- Name: **bController** (lowercase 'b', uppercase 'C')
 - Voice: Technical, direct, no marketing fluff
 - Identity: Developer-tool aesthetic — functional, keyboard-first, minimal
 - No external brand assets beyond the 14 PNG icons in `assets/`

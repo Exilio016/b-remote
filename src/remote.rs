@@ -74,7 +74,7 @@ impl Remote {
                 _ => Path::new(".").to_owned(),
             },
         };
-        return cfg.join("b-controller.token.txt");
+        return cfg.join("b-remote.token.txt");
     }
 
     fn get_token() -> Option<String> {

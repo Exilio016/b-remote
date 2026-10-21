@@ -139,7 +139,7 @@ impl Renderer for TermRenderer {
         match &self.error {
             None => {
                 // Draw title
-                self.window.mvprintw(0, 0, "bController");
+                self.window.mvprintw(0, 0, "b-remote");
                 self.window.mvprintw(0, 13, "Press q to quit");
 
                 // Draw buttons
@@ -167,7 +167,7 @@ impl Renderer for TermRenderer {
                 self.window.refresh();
             }
             Some(e) => {
-                self.window.mvprintw(0, 0, "bController - Error");
+                self.window.mvprintw(0, 0, "b-remote - Error");
                 let error_msg = e
                     .chain()
                     .map(|c| c.to_string())

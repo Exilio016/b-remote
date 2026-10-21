@@ -1,4 +1,4 @@
-# bController
+# b-remote
 
 A Samsung TV remote controller written in Rust with both terminal (TUI) and graphical (raylib) interfaces.
 <img width="1042" height="547" alt="image" src="https://github.com/user-attachments/assets/eb34b61c-7de6-41b7-a8d9-f26628f813e2" />
@@ -22,12 +22,12 @@ A Samsung TV remote controller written in Rust with both terminal (TUI) and grap
 ## Building
 
 ```bash
-git clone https://github.com/Exilio016/bController
-cd bController
+git clone https://github.com/Exilio016/b-remote
+cd b-remote
 cargo build --release
 ```
 
-The executable will be at `target/release/bController`.
+The executable will be at `target/release/b-remote`.
 
 ## Running
 
@@ -35,14 +35,14 @@ The executable will be at `target/release/bController`.
 ```bash
 cargo run --release -- --tui
 # or directly:
-./target/release/bController --tui
+./target/release/b-remote --tui
 ```
 
 ### Graphical UI (GUI)
 ```bash
 cargo run --release
 # or directly:
-./target/release/bController
+./target/release/b-remote
 ```
 
 ## Controls
