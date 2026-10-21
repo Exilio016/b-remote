@@ -12,7 +12,7 @@ pub struct TermRenderer {
     running: bool,
     window: Window,
     error: Option<Error>,
-    has_drawn_error: bool
+    has_drawn_error: bool,
 }
 
 const GRID_ROWS: f32 = 9.0;
@@ -31,53 +31,24 @@ impl Button {
     }
 }
 
-impl TermRenderer {
-    fn get_keycode(&self) -> u32 {
-        let key = self.window.getch().unwrap();
-        let keycode = match key {
-            Input::Character(c) => {
-                if c == '\n' {
-                    257
-                } else if c == '\u{1b}' {
-                    256
-                } else if c == '+' {
-                    '=' as u32
-                } else if c == '_' {
-                    '-' as u32
-                } else {
-                    c.to_ascii_uppercase() as u32
-                }
-            }
-            Input::KeyUp => 265,
-            Input::KeyLeft => 263,
-            Input::KeyEnter => 257,
-            Input::KeyRight => 262,
-            Input::KeyDown => 264,
-            Input::KeyMouse => 1,
-            _ => 0,
-        };
-        return keycode;
-    }
-}
-
 impl Renderer for TermRenderer {
     fn new(buttons: [Button; 17]) -> Self {
         let assets = HashMap::from([
             ("circle-power".to_owned(), '⏻'),
-            ("arrow-up".to_owned(), ''),
-            ("volume-x".to_owned(), '󰝟'),
-            ("arrow-down".to_owned(), ''),
-            ("tv".to_owned(), '󰑈'),
-            ("circle-arrow-up".to_owned(), ''),
-            ("circle-arrow-left".to_owned(), ''),
-            ("circle".to_owned(), ''),
-            ("circle-arrow-right".to_owned(), ''),
-            ("circle-arrow-down".to_owned(), ''),
-            ("undo-2".to_owned(), ''),
-            ("play".to_owned(), ''),
-            ("pause".to_owned(), ''),
-            ("house".to_owned(), ''),
-            ("settings".to_owned(), ''),
+            ("arrow-up".to_owned(), '▲'),
+            ("volume-x".to_owned(), '🔇'),
+            ("arrow-down".to_owned(), '▼'),
+            ("tv".to_owned(), '📺'),
+            ("circle-arrow-up".to_owned(), '▲'),
+            ("circle-arrow-left".to_owned(), '◄'),
+            ("circle".to_owned(), '●'),
+            ("circle-arrow-right".to_owned(), '►'),
+            ("circle-arrow-down".to_owned(), '▼'),
+            ("undo-2".to_owned(), '↩'),
+            ("play".to_owned(), '▶'),
+            ("pause".to_owned(), '⏸'),
+            ("house".to_owned(), '⌂'),
+            ("settings".to_owned(), '⚙'),
         ]);
         let window = initscr();
         crosscurses::curs_set(0);
@@ -89,7 +60,7 @@ impl Renderer for TermRenderer {
             running: true,
             window,
             error: None,
-            has_drawn_error: false
+            has_drawn_error: false,
         };
         term.draw();
         return term;
@@ -108,7 +79,7 @@ impl Renderer for TermRenderer {
         if keycode == 1 {
             mevent = Some(crosscurses::getmouse().unwrap());
         }
-        if keycode == 'Q' as u32 {
+        if keycode == 'Q' as u32 || keycode == 'q' as u32 {
             self.running = false;
         }
         if self.error.is_none() {
@@ -121,10 +92,10 @@ impl Renderer for TermRenderer {
                                 && x == mevent.unwrap().x
                                 && y == mevent.unwrap().y)
                         {
-                            remote.send_key(&b.cmd).unwrap();
+                            let _ = remote.send_key(&b.cmd);
                         }
                     }
-                    remote.ping().unwrap();
+                    let _ = remote.ping();
                 }
                 None => {}
             }
@@ -139,36 +110,50 @@ impl Renderer for TermRenderer {
             return;
         }
         self.window.clear();
-        self.window.printw("Press q to quit...\n");
+
         match &self.error {
             None => {
-                let border = r#"┌────────────────┐
-│                │
-│                │
-│                │
-│                │
-│                │
-│                │
-│                │
-│                │
-│                │
-└────────────────┘"#;
-                self.window.mvprintw(1, 0, border);
+                // Draw title
+                self.window.mvprintw(0, 0, "bController");
+                self.window.mvprintw(0, 13, "Press q to quit");
+
+                // Draw buttons
                 for b in &self.buttons {
                     let (x, y) = b.find_grid_pos();
-                    self.window.mvprintw(
-                        y,
-                        x,
-                        format!("{}", self.assets.get(&b.asset_name).unwrap()),
-                    );
+                    let ch = self.assets.get(&b.asset_name).copied().unwrap_or('?');
+                    self.window.mvprintw(y, x, &format!("{}", ch));
                 }
+
+                // Draw shortcut legend at bottom
+                let legend_y = 13;
+                self.window.mvprintw(
+                    legend_y,
+                    0,
+                    "P=Power  +=VolUp  M=Mute  -=VolDown  K=ChUp  G=ChList  J=ChDown",
+                );
+                self.window.mvprintw(
+                    legend_y + 1,
+                    0,
+                    "Arrows=Nav  Enter=OK  Esc=Back  Space=Play  Z=Pause  H=Home  S=Menu",
+                );
+                self.window
+                    .mvprintw(legend_y + 2, 0, "Mouse clicks work  |  q/Q to quit");
+
                 self.window.refresh();
-            },
+            }
             Some(e) => {
-                let error_msg = e.chain().map(|c| c.to_string()).collect::<Vec<_>>().join("\n");
-                self.window.mvprintw(1, 0, "Error");
-                self.window.mvprintw(2, 0, error_msg);
+                self.window.mvprintw(0, 0, "bController - Error");
+                let error_msg = e
+                    .chain()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                for (i, line) in error_msg.lines().enumerate() {
+                    self.window.mvprintw(2 + i as i32, 0, line);
+                }
+                self.window.mvprintw(12, 0, "Press q to quit");
                 self.has_drawn_error = true;
+                self.window.refresh();
             }
         }
     }
@@ -177,3 +162,33 @@ impl Renderer for TermRenderer {
         self.error = Some(error);
     }
 }
+
+impl TermRenderer {
+    fn get_keycode(&self) -> u32 {
+        let key = self.window.getch();
+        let keycode = match key {
+            Some(Input::Character(c)) => {
+                if c == '\n' {
+                    257
+                } else if c == '\u{1b}' {
+                    256
+                } else if c == '+' {
+                    '=' as u32
+                } else if c == '_' {
+                    '-' as u32
+                } else {
+                    c.to_ascii_uppercase() as u32
+                }
+            }
+            Some(Input::KeyUp) => 265,
+            Some(Input::KeyLeft) => 263,
+            Some(Input::KeyEnter) => 257,
+            Some(Input::KeyRight) => 262,
+            Some(Input::KeyDown) => 264,
+            Some(Input::KeyMouse) => 1,
+            _ => 0,
+        };
+        return keycode;
+    }
+}
+
