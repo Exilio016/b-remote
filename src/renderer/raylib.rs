@@ -1,4 +1,4 @@
-use anyhow::{Context, Error};
+use anyhow::{Context, Error, Result, bail};
 use sola_raylib::prelude::*;
 
 use crate::{
@@ -35,6 +35,24 @@ impl Asset {
     fn get_bytes(&self) -> Option<&'static [u8]> {
         let name = &self.0;
         ASSET_MAP.iter().find(|&&(k, _)| k == name).map(|&(_, v)| v)
+    }
+    fn get_texture(&self, t: &RaylibThread, h: &mut RaylibHandle) -> Result<Texture2D> {
+        let asset = &self.get_bytes();
+        match asset {
+            None => bail!("Could not load asset {}", self.name()),
+            Some(a) => {
+                let image = Image::load_image_from_mem(".png", a)
+                    .with_context(|| format!("Error loading image from asset {}:", self.name()))?;
+                let texture = h.load_texture_from_image(&t, &image).with_context(|| {
+                    format!(
+                        "Error loading texture from image for asset {}:",
+                        self.name()
+                    )
+                })?;
+                texture.set_texture_filter(t, TextureFilter::TEXTURE_FILTER_ANISOTROPIC_16X);
+                return Ok(texture);
+            }
+        }
     }
 }
 
@@ -302,75 +320,26 @@ impl Renderer for RaylibRenderer {
         let mut assets = Vec::new();
         let mut error = None;
         for b in &buttons {
-            let asset = &b.asset.get_bytes();
-            match asset {
-                Some(a) => {
-                    let image = Image::load_image_from_mem(".png", a).with_context(|| {
-                        format!("Error loading image from asset {}:", b.asset.name())
-                    });
-                    match image {
-                        Ok(i) => {
-                            let texture = h.load_texture_from_image(&t, &i).with_context(|| {
-                                format!(
-                                    "Error loading texture from image for asset {}:",
-                                    b.asset.name()
-                                )
-                            });
-                            match texture {
-                                Ok(tex) => {
-                                    tex.set_texture_filter(&t, TextureFilter::TEXTURE_FILTER_ANISOTROPIC_16X);
-                                    assets.push(tex);
-                                }
-                                Err(e) => {
-                                    error = Some(e);
-                                    break;
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            error = Some(e);
-                            break;
-                        }
-                    }
+            let texture = b.asset.get_texture(&t, &mut h);
+            match texture {
+                Ok(tex) => {
+                    assets.push(tex);
                 }
-                None => {
-                    error = Some(anyhow::anyhow!("Could not load asset {}", b.asset.name()));
+                Err(e) => {
+                    error = Some(e);
                     break;
                 }
             }
         }
         for app in App::list() {
             let asset = Asset::new(app.name().to_string());
-            let bytes = &asset.get_bytes();
-            match bytes {
-                Some(a) => {
-                    let image = Image::load_image_from_mem(".png", a).with_context(|| {
-                        format!("Error loading image from asset {}:", asset.name())
-                    });
-                    match image {
-                        Ok(i) => {
-                            let texture = h.load_texture_from_image(&t, &i).with_context(|| {
-                                format!(
-                                    "Error loading texture from image for asset {}:",
-                                    app.name()
-                                )
-                            });
-                            match texture {
-                                Ok(t) => assets.push(t),
-                                Err(e) => {
-                                    error = Some(e);
-                                    break;
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            error = Some(e);
-                            break;
-                        }
-                    }
+            let texture = asset.get_texture(&t, &mut h);
+            match texture {
+                Ok(tex) => {
+                    assets.push(tex);
                 }
-                None => {
-                    error = Some(anyhow::anyhow!("Could not load asset {}", asset.name()));
+                Err(e) => {
+                    error = Some(e);
                     break;
                 }
             }
