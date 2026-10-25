@@ -1,9 +1,10 @@
 use std::{
+    collections::HashMap,
     sync::atomic::{AtomicUsize, Ordering::SeqCst},
 };
 
 use anyhow::{Context, Error, Result, bail};
-use sola_raylib::prelude::*;
+use sola_raylib::{prelude::*};
 
 use crate::{
     remote::{App, Key, Remote},
@@ -14,6 +15,7 @@ pub struct RaylibRenderer {
     handle: RaylibHandle,
     thread: RaylibThread,
     buttons: Vec<DrawableButton>,
+    font: HashMap<i32, Font>,
     clicked_frames: u32,
     clicked_index: usize,
     hover_index: Option<usize>,
@@ -55,6 +57,35 @@ impl Asset {
                 return Ok(texture);
             }
         }
+    }
+    fn default_fonts(h: &mut RaylibHandle) -> HashMap<i32, Font>{
+        let mut fonts = HashMap::new();
+        let def24 = unsafe { Font::from_raw(h.get_font_default().to_owned()) };
+        let def32 = unsafe { Font::from_raw(h.get_font_default().to_owned()) };
+        fonts.insert(24, def24);
+        fonts.insert(32, def32);
+        return fonts;
+    }
+
+    fn get_font(&self, t: &RaylibThread, h: &mut RaylibHandle) -> Result<HashMap<i32, Font>> {
+        let asset = &self.get_bytes();
+        let mut fonts = HashMap::with_capacity(2);
+        match asset {
+            None => bail!("Could not load asset {}", self.name()),
+            Some(a) => {
+                let chars: String = h
+                    .get_font_default()
+                    .chars()
+                    .iter()
+                    .map(|glyph| glyph.value as u8 as char)
+                    .collect();
+                let font24 = h.load_font_from_memory(t, ".ttf", *a, 24, Some(chars.as_ref()))?;
+                let font32 = h.load_font_from_memory(t, ".ttf", *a, 48, Some(chars.as_ref()))?;
+                fonts.insert(24, font24);
+                fonts.insert(32, font32);
+                return Ok(fonts);
+            }
+        };
     }
 }
 
@@ -361,12 +392,20 @@ impl Renderer for RaylibRenderer {
             }
         }
 
-
+        let font_asset = Asset::new("font".into());
+        let font = match font_asset.get_font(&t, &mut h) {
+            Err(e) => {
+                error = Some(e);
+                Asset::default_fonts(&mut h)
+            }
+            Ok(font) => font,
+        };
         h.set_exit_key(None);
         return RaylibRenderer {
             handle: h,
             thread: t,
             buttons: btns,
+            font,
             clicked_frames: 0,
             clicked_index: 0,
             hover_index: None,
@@ -379,15 +418,15 @@ impl Renderer for RaylibRenderer {
         return !self.handle.window_should_close() && !self.close;
     }
 
-
     fn update(&mut self, remote: &mut Option<Remote>) {
         match &self.error {
             Some(_) => {
+                let font = self.font.get(&24).unwrap();
                 self.handle.set_window_size(W_WIDTH_ERR, W_HEIGHT_ERR);
-                let btn_text_size = self.handle.measure_text("Close", 24);
-                let x = (W_WIDTH_ERR / 2 - (btn_text_size / 2 + 10)) as f32;
+                let btn_text_size = font.measure_text("Close", 24.0, 0.5);
+                let x = W_WIDTH_ERR as f32 / 2.0 - (btn_text_size.x / 2.0 + 10.0);
                 let y = (W_HEIGHT_ERR - 80) as f32;
-                let width = (btn_text_size + 4) as f32;
+                let width = btn_text_size.x + 4.0;
                 let height = 28.0;
 
                 if self
@@ -456,9 +495,11 @@ impl Renderer for RaylibRenderer {
         let btn_base = Color::new(28, 28, 32, 255);
         let btn_hover = Color::new(40, 40, 48, 255);
 
+        let font32 = self.font.get(&32).unwrap();
+        let font24 = self.font.get(&24).unwrap();
         match &self.error {
             None => {
-                let title_size = self.handle.measure_text("Applications", 24);
+                let title_size = font24.measure_text("Applications", 24.0, 0.5);
                 let mut d = self.handle.begin_drawing(&self.thread);
                 d.clear_background(&bg);
 
@@ -468,12 +509,13 @@ impl Renderer for RaylibRenderer {
                     self.buttons[i].draw(&mut d, btn_base, btn_hover, is_clicked, is_hovered);
                 }
 
-                let title_x = W_WIDTH_CONTROLS / 2 - title_size / 2;
-                d.draw_text(
+                let title_x = W_WIDTH_CONTROLS / 2 - title_size.x as i32 / 2;
+                d.draw_text_ex(
+                    &font24,
                     "Applications",
-                    W_WIDTH_CONTROLS + title_x,
-                    10,
-                    24,
+                    Vector2::new((W_WIDTH_CONTROLS + title_x) as f32, 10.0),
+                    24.0,
+                    0.5,
                     Color::RAYWHITE,
                 );
             }
@@ -482,7 +524,6 @@ impl Renderer for RaylibRenderer {
                 let end_y = W_HEIGHT_ERR - 120;
                 let start_x = 20;
                 let end_x = W_WIDTH_ERR - 40;
-                let line_height = 28;
 
                 let error_msg = e
                     .chain()
@@ -491,30 +532,30 @@ impl Renderer for RaylibRenderer {
                     .join("\n");
                 let lines_raw: Vec<&str> = error_msg.lines().collect();
                 let mut lines = Vec::new();
-                let space_size = self.handle.measure_text(" ", 24);
-                let title_size = self.handle.measure_text("Error", 32);
-                let btn_text_size = self.handle.measure_text("Close", 24);
+                let space_size = font24.measure_text(" ", 24.0, 0.5);
+                let title_size = font32.measure_text("Error", 32.0, 0.5);
+                let btn_text_size = font24.measure_text("Close", 24.0, 0.5);
                 let line_width = end_x - start_x + 1;
 
                 for raw_line in lines_raw {
                     let content = raw_line.split_whitespace();
                     let mut line = String::new();
-                    let mut remaining = line_width;
+                    let mut remaining = line_width as f32;
                     for word in content {
-                        let size = self.handle.measure_text(word, 24);
-                        if size + space_size < remaining {
+                        let size = font24.measure_text(word, 24.0, 0.5);
+                        if size.x + space_size.x < remaining {
                             line.push_str(word);
                             line.push(' ');
-                            remaining -= size;
-                            remaining -= space_size;
+                            remaining -= size.x;
+                            remaining -= space_size.x;
                         } else {
-                            remaining = line_width;
+                            remaining = line_width as f32;
                             lines.push(line);
                             line = String::new();
                             line.push_str(word);
                             line.push(' ');
-                            remaining -= size;
-                            remaining -= space_size;
+                            remaining -= size.x;
+                            remaining -= space_size.x;
                         }
                     }
                     if !line.is_empty() {
@@ -526,32 +567,40 @@ impl Renderer for RaylibRenderer {
 
                 let mut d = self.handle.begin_drawing(&self.thread);
                 d.clear_background(&bg);
-                d.draw_text(
+                d.draw_text_ex(
+                    &font32,
                     "Error",
-                    W_WIDTH_ERR / 2 - title_size / 2,
-                    20,
-                    32,
+                    Vector2::new(W_WIDTH_ERR as f32 / 2.0 - title_size.x / 2.0, 20.0),
+                    32.0,
+                    0.5,
                     Color::new(220, 80, 80, 255),
                 );
                 for (i, line) in lines.iter().enumerate() {
-                    let y = start_y + (i as i32 * line_height);
+                    let y = start_y + (i as i32 * space_size.y as i32);
                     if y > end_y {
                         break;
                     }
-                    d.draw_text(&line, start_x, y, 24, Color::WHITE);
+                    d.draw_text_ex(
+                        &font24,
+                        &line,
+                        Vector2::new(start_x as f32, y as f32),
+                        24.0,
+                        0.5,
+                        Color::WHITE,
+                    );
                 }
                 d.draw_rectangle(
-                    W_WIDTH_ERR / 2 - (btn_text_size / 2 + 10),
+                    W_WIDTH_ERR / 2 - (btn_text_size.x as i32 / 2 + 10),
                     W_HEIGHT_ERR - 80,
-                    btn_text_size + 20,
+                    btn_text_size.x as i32 + 20,
                     34,
                     btn_base,
                 );
                 d.draw_rectangle_rounded_lines_ex(
                     Rectangle::new(
-                        (W_WIDTH_ERR / 2 - (btn_text_size / 2 + 10)) as f32,
+                        W_WIDTH_ERR as f32 / 2.0 - (btn_text_size.x / 2.0 + 10.0),
                         (W_HEIGHT_ERR - 80) as f32,
-                        (btn_text_size + 20) as f32,
+                        btn_text_size.x + 20.0,
                         34.0,
                     ),
                     0.3,
@@ -559,11 +608,15 @@ impl Renderer for RaylibRenderer {
                     2.0,
                     &Color::new(100, 100, 120, 255),
                 );
-                d.draw_text(
+                d.draw_text_ex(
+                    &font24,
                     "Close",
-                    W_WIDTH_ERR / 2 - (btn_text_size / 2),
-                    W_HEIGHT_ERR - 75,
-                    24,
+                    Vector2::new(
+                        W_WIDTH_ERR as f32 / 2.0 - (btn_text_size.x / 2.0),
+                        (W_HEIGHT_ERR - 75) as f32,
+                    ),
+                    24.0,
+                    0.5,
                     Color::WHITE,
                 );
             }
