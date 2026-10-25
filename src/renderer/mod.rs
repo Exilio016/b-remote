@@ -1,6 +1,6 @@
 use anyhow::Error;
 
-use crate::remote::{Key, Remote};
+use crate::remote::{App, Key, Remote};
 
 pub mod raylib;
 pub mod term;
@@ -29,7 +29,7 @@ pub struct Button {
 }
 
 pub trait Renderer {
-    fn new(buttons: [Button;17]) -> Self;
+    fn new(buttons: [Button;17], apps: Vec<App>) -> Self;
     fn is_running(&self) -> bool;
     fn update(&mut self, remote: &mut Option<Remote>);
     fn draw(&mut self);

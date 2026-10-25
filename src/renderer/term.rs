@@ -2,7 +2,7 @@ use anyhow::Error;
 use crosscurses::{ALL_MOUSE_EVENTS, Input, MEVENT, REPORT_MOUSE_POSITION, Window, initscr};
 use std::{ptr::null_mut};
 
-use crate::{remote::Remote, renderer::{Asset, KeyCode, Position, Renderer}};
+use crate::{remote::{App, Remote}, renderer::{Asset, KeyCode, Position, Renderer}};
 
 use super::Button;
 
@@ -78,7 +78,7 @@ impl Asset {
 }
 
 impl Renderer for TermRenderer {
-    fn new(buttons: [Button; 17]) -> Self {
+    fn new(buttons: [Button; 17], _: Vec<App>) -> Self {
         let window = initscr();
         crosscurses::curs_set(0);
         window.keypad(true);

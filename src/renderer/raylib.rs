@@ -18,7 +18,6 @@ pub struct RaylibRenderer {
     clicked_index: usize,
     hover_index: Option<usize>,
     error: Option<Error>,
-    loaded_apps: bool,
     close: bool,
 }
 
@@ -321,25 +320,12 @@ impl App {
     }
 }
 
-impl RaylibRenderer {
-    fn load_apps(&mut self, remote: &mut Remote) -> Result<()> {
-        for app in remote.get_apps()? {
-            let asset = Asset::new(app.name().to_string());
-            let texture = asset.get_texture(&self.thread, &mut self.handle)?;
-            let group = ButtonGroup::new(8);
-            self.buttons
-                .push(DrawableButton::from_app(&app, group, texture));
-        }
-        Ok(())
-    }
-}
-
 impl Renderer for RaylibRenderer {
     fn display_error(&mut self, error: Error) {
         self.error = Some(error);
     }
 
-    fn new(buttons: [Button; 17]) -> RaylibRenderer {
+    fn new(buttons: [Button; 17], apps: Vec<App>) -> RaylibRenderer {
         let (mut h, t) = sola_raylib::init()
             .size(W_WIDTH, W_HEIGHT)
             .title("b-remote")
@@ -360,6 +346,21 @@ impl Renderer for RaylibRenderer {
                 }
             }
         }
+        for app in apps {
+            let asset = Asset::new(app.name().into());
+            let texture = asset.get_texture(&t, &mut h);
+            match texture {
+                Ok(tex) => {
+                    let group = ButtonGroup::new(8);
+                    btns.push(DrawableButton::from_app(&app, group, tex));
+                }
+                Err(e) => {
+                    error = Some(e);
+                    break;
+                }
+            }
+        }
+
 
         h.set_exit_key(None);
         return RaylibRenderer {
@@ -369,7 +370,6 @@ impl Renderer for RaylibRenderer {
             clicked_frames: 0,
             clicked_index: 0,
             hover_index: None,
-            loaded_apps: false,
             error,
             close: false,
         };
@@ -403,14 +403,6 @@ impl Renderer for RaylibRenderer {
             }
             None => match remote {
                 Some(r) => {
-                    if !self.loaded_apps {
-                        match self.load_apps(r) {
-                            Err(e) => self.error = Some(e),
-                            _ => {
-                                self.loaded_apps = true;
-                            }
-                        }
-                    }
                     if self.clicked_frames > 0 {
                         self.clicked_frames -= 1;
                     }

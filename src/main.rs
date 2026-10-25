@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crate::remote::{Key, Remote};
+use crate::remote::{App, Key, Remote};
 use crate::renderer::term::TermRenderer;
 use crate::renderer::{Asset, Button, KeyCode, Position, Renderer};
 use crate::renderer::raylib::RaylibRenderer;
@@ -24,7 +24,7 @@ fn app(renderer:&mut impl Renderer, remote:Result<Remote>) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let remote = Remote::new();
+    let mut remote = Remote::new();
     let buttons: [Button; 17] = [
         Button { pos: Position {x: 0, y: 0}, cmd: Key::Power,   shortcut: KeyCode::P,       asset: Asset::new("circle-power".into())},
         Button { pos: Position {x: 0, y: 2}, cmd: Key::VolUp,   shortcut: KeyCode::Equal,   asset: Asset::new("arrow-up".into())},
@@ -44,12 +44,16 @@ fn main() {
         Button { pos: Position {x: 2, y: 8}, cmd: Key::Home,    shortcut: KeyCode::H,       asset: Asset::new("house".into())},
         Button { pos: Position {x: 4, y: 8}, cmd: Key::Menu,    shortcut: KeyCode::S,       asset: Asset::new("settings".into())}
     ];
+    let apps: Vec<App> = match &mut remote {
+        Ok(remote) => remote.get_apps().unwrap(),
+        Err(_) => Vec::new(),
+    };
     if args.contains(&"--tui".to_owned()) {
-        let mut r = TermRenderer::new(buttons);
+        let mut r = TermRenderer::new(buttons, apps);
         app(&mut r, remote);
     }
     else {
-        let mut r = RaylibRenderer::new(buttons);
+        let mut r = RaylibRenderer::new(buttons, apps);
         app(&mut r, remote);
     }
 }
