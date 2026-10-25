@@ -1,21 +1,24 @@
+use std::{
+    sync::atomic::{AtomicUsize, Ordering::SeqCst},
+};
+
 use anyhow::{Context, Error, Result, bail};
 use sola_raylib::prelude::*;
 
 use crate::{
-    remote::{App, Remote},
+    remote::{App, Key, Remote},
     renderer::{Asset, Button, KeyCode, Position, Renderer},
 };
 
 pub struct RaylibRenderer {
     handle: RaylibHandle,
     thread: RaylibThread,
-    buttons: [Button; 17],
-    textures: Vec<Texture2D>,
+    buttons: Vec<DrawableButton>,
     clicked_frames: u32,
     clicked_index: usize,
     hover_index: Option<usize>,
     error: Option<Error>,
-    apps: Option<Vec<App>>,
+    loaded_apps: bool,
     close: bool,
 }
 
@@ -124,23 +127,73 @@ impl Position {
     }
 }
 
-impl Button {
+struct DrawableButton {
+    cell: Rectangle,
+    group: ButtonGroup,
+    texture: Texture2D,
+    max_icon_size: f32,
+    key: Option<Key>,
+    app: Option<App>,
+    shortcut: Option<KeyboardKey>,
+    action: fn(remote: &mut Remote, btn: &DrawableButton) -> Result<()>,
+}
+
+static COUNTER: AtomicUsize = AtomicUsize::new(0);
+impl DrawableButton {
+    fn from_button(button: &Button, group: ButtonGroup, texture: Texture2D) -> Self {
+        let cell = button.pos.find_grid_position();
+        let action = |remote: &mut Remote, btn: &DrawableButton| {
+            remote
+                .send_key(&btn.key.unwrap())
+                .with_context(|| "Failed to send key command to TV:")?;
+            Ok(())
+        };
+        let shortcut = button.shortcut.to_raylib();
+        DrawableButton {
+            cell,
+            group,
+            texture,
+            shortcut: Some(shortcut),
+            key: Some(button.cmd),
+            app: None,
+            max_icon_size: 24.0,
+            action: action,
+        }
+    }
+
+    fn from_app(app: &App, group: ButtonGroup, texture: Texture2D) -> Self {
+        let cell = App::find_grid_position(COUNTER.fetch_add(1, SeqCst));
+        let action = |remote: &mut Remote, btn: &DrawableButton| {
+            let _ = remote.open_app(btn.app.unwrap())?;
+            Ok(())
+        };
+        DrawableButton {
+            cell,
+            group,
+            texture,
+            shortcut: None,
+            key: None,
+            app: Some(*app),
+            max_icon_size: 50.0,
+            action: action,
+        }
+    }
+
+    fn click(&self, remote: &mut Remote) -> Result<()> {
+        return (self.action)(remote, self);
+    }
+
     fn clicked(&self, rl: &RaylibHandle) -> bool {
-        let rec = self.pos.find_grid_position();
         if !rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT)
             && !(rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT))
         {
             return false;
         }
-        let pos = rl.get_mouse_position();
-        return pos.x > rec.x
-            && pos.x < (rec.x + rec.width)
-            && pos.y > rec.y
-            && pos.y < (rec.y + rec.height);
+        return self.is_hovered(rl);
     }
 
     fn is_hovered(&self, rl: &RaylibHandle) -> bool {
-        let rec = self.pos.find_grid_position();
+        let rec = self.cell;
         let pos = rl.get_mouse_position();
         pos.x > rec.x
             && pos.x < (rec.x + rec.width)
@@ -149,18 +202,106 @@ impl Button {
     }
 
     fn icon_rect(&self) -> Rectangle {
-        let cell = self.pos.find_grid_position();
-        // Source icons are 24x24; don't upscale beyond that to avoid pixelation
-        let max_icon_size = 24.0;
-        let icon_size = (cell.width.min(cell.height) - CELL_PADDING * 2.0)
-            .min(max_icon_size)
+        let icon_size = (self.cell.width.min(self.cell.height) - CELL_PADDING * 2.0)
+            .min(self.max_icon_size)
             .max(16.0);
         Rectangle::new(
-            cell.x + (cell.width - icon_size) / 2.0,
-            cell.y + (cell.height - icon_size) / 2.0,
+            self.cell.x + (self.cell.width - icon_size) / 2.0,
+            self.cell.y + (self.cell.height - icon_size) / 2.0,
             icon_size,
             icon_size,
         )
+    }
+    fn draw(
+        &self,
+        d: &mut RaylibDrawHandle,
+        btn_base: Color,
+        btn_hover: Color,
+        is_clicked: bool,
+        is_hovered: bool,
+    ) {
+        //Draw bg
+        let group_col = self.group.color();
+        let group_bg = Color::new(
+            (group_col.r as f32 * 0.08 + btn_base.r as f32 * 0.92) as u8,
+            (group_col.g as f32 * 0.08 + btn_base.g as f32 * 0.92) as u8,
+            (group_col.b as f32 * 0.08 + btn_base.b as f32 * 0.92) as u8,
+            255,
+        );
+        d.draw_rectangle_rounded(
+            Rectangle::new(
+                self.cell.x + 1.0,
+                self.cell.y + 1.0,
+                self.cell.width - 2.0,
+                self.cell.height - 2.0,
+            ),
+            CORNER_RADIUS,
+            8,
+            &group_bg,
+        );
+
+        let group_col = self.group.color();
+        // Button background
+        let bg_color = if is_clicked {
+            Color::new(
+                (group_col.r as f32 * 0.4 + btn_base.r as f32 * 0.6) as u8,
+                (group_col.g as f32 * 0.4 + btn_base.g as f32 * 0.6) as u8,
+                (group_col.b as f32 * 0.4 + btn_base.b as f32 * 0.6) as u8,
+                255,
+            )
+        } else if is_hovered {
+            btn_hover
+        } else {
+            btn_base
+        };
+
+        d.draw_rectangle_rounded(
+            Rectangle::new(
+                self.cell.x + 1.0,
+                self.cell.y + 1.0,
+                self.cell.width - 2.0,
+                self.cell.height - 2.0,
+            ),
+            CORNER_RADIUS,
+            8,
+            &bg_color,
+        );
+
+        // Subtle group accent line at top of button
+        if !is_clicked {
+            let accent_alpha = if is_hovered { 255 } else { 100 };
+            d.draw_rectangle_rounded(
+                Rectangle::new(
+                    self.cell.x + 1.0,
+                    self.cell.y + 1.0,
+                    self.cell.width - 2.0,
+                    2.0,
+                ),
+                0.5,
+                4,
+                &Color::new(group_col.r, group_col.g, group_col.b, accent_alpha),
+            );
+        }
+
+        // Draw icon centered in cell
+        let tint = if is_clicked {
+            Color::new(220, 220, 230, 255)
+        } else {
+            Color::WHITE
+        };
+        d.draw_texture_pro(
+            &self.texture,
+            Rectangle::new(
+                0.0,
+                0.0,
+                self.texture.width as f32,
+                self.texture.height as f32,
+            ),
+            self.icon_rect(),
+            Vector2::new(0.0, 0.0),
+            0.0,
+            tint,
+        );
     }
 }
 
@@ -178,131 +319,18 @@ impl App {
             + ((index % row_count as usize) as f32 * (cell_width + 10.0));
         return Rectangle::new(x, y, cell_width, cell_height);
     }
-    pub fn get_tex_index(&self) -> usize {
-        for (i, a) in App::list().iter().enumerate() {
-            if self == a {
-                return i;
-            }
-        }
-        std::unreachable!();
-    }
-    fn icon_rect(index: usize) -> Rectangle {
-        let cell = App::find_grid_position(index);
-        let icon_size = 50.0;
-        Rectangle::new(
-            cell.x + (cell.width - icon_size) / 2.0,
-            cell.y + (cell.height - icon_size) / 2.0,
-            icon_size,
-            icon_size,
-        )
-    }
-
-    fn is_hovered(index: usize, rl: &RaylibHandle) -> bool {
-        let rec = App::find_grid_position(index);
-        let pos = rl.get_mouse_position();
-        pos.x > rec.x
-            && pos.x < (rec.x + rec.width)
-            && pos.y > rec.y
-            && pos.y < (rec.y + rec.height)
-    }
-
-    fn clicked(index: usize, rl: &RaylibHandle) -> bool {
-        if !rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT)
-            && !(rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT))
-        {
-            return false;
-        }
-        return App::is_hovered(index, rl);
-    }
 }
 
 impl RaylibRenderer {
-    fn draw_button(
-        d: &mut RaylibDrawHandle,
-        group: ButtonGroup,
-        btn_base: Color,
-        btn_hover: Color,
-        cell: Rectangle,
-        icon_rect: Rectangle,
-        is_clicked: bool,
-        is_hovered: bool,
-        texture: Option<&Texture2D>,
-    ) {
-        //Draw bg
-        let group_col = group.color();
-        let group_bg = Color::new(
-            (group_col.r as f32 * 0.08 + btn_base.r as f32 * 0.92) as u8,
-            (group_col.g as f32 * 0.08 + btn_base.g as f32 * 0.92) as u8,
-            (group_col.b as f32 * 0.08 + btn_base.b as f32 * 0.92) as u8,
-            255,
-        );
-        d.draw_rectangle_rounded(
-            Rectangle::new(
-                cell.x + 1.0,
-                cell.y + 1.0,
-                cell.width - 2.0,
-                cell.height - 2.0,
-            ),
-            CORNER_RADIUS,
-            8,
-            &group_bg,
-        );
-
-        let group_col = group.color();
-        // Button background
-        let bg_color = if is_clicked {
-            Color::new(
-                (group_col.r as f32 * 0.4 + btn_base.r as f32 * 0.6) as u8,
-                (group_col.g as f32 * 0.4 + btn_base.g as f32 * 0.6) as u8,
-                (group_col.b as f32 * 0.4 + btn_base.b as f32 * 0.6) as u8,
-                255,
-            )
-        } else if is_hovered {
-            btn_hover
-        } else {
-            btn_base
-        };
-
-        d.draw_rectangle_rounded(
-            Rectangle::new(
-                cell.x + 1.0,
-                cell.y + 1.0,
-                cell.width - 2.0,
-                cell.height - 2.0,
-            ),
-            CORNER_RADIUS,
-            8,
-            &bg_color,
-        );
-
-        // Subtle group accent line at top of button
-        if !is_clicked {
-            let accent_alpha = if is_hovered { 255 } else { 100 };
-            d.draw_rectangle_rounded(
-                Rectangle::new(cell.x + 1.0, cell.y + 1.0, cell.width - 2.0, 2.0),
-                0.5,
-                4,
-                &Color::new(group_col.r, group_col.g, group_col.b, accent_alpha),
-            );
+    fn load_apps(&mut self, remote: &mut Remote) -> Result<()> {
+        for app in remote.get_apps()? {
+            let asset = Asset::new(app.name().to_string());
+            let texture = asset.get_texture(&self.thread, &mut self.handle)?;
+            let group = ButtonGroup::new(8);
+            self.buttons
+                .push(DrawableButton::from_app(&app, group, texture));
         }
-
-        // Draw icon centered in cell
-        if texture.is_some() {
-            let tex = texture.unwrap();
-            let tint = if is_clicked {
-                Color::new(220, 220, 230, 255)
-            } else {
-                Color::WHITE
-            };
-            d.draw_texture_pro(
-                tex,
-                Rectangle::new(0.0, 0.0, tex.width as f32, tex.height as f32),
-                icon_rect,
-                Vector2::new(0.0, 0.0),
-                0.0,
-                tint,
-            );
-        }
+        Ok(())
     }
 }
 
@@ -317,26 +345,14 @@ impl Renderer for RaylibRenderer {
             .title("b-remote")
             .vsync()
             .build();
-        let mut assets = Vec::new();
         let mut error = None;
-        for b in &buttons {
+        let mut btns = Vec::new();
+        for (i, b) in buttons.iter().enumerate() {
             let texture = b.asset.get_texture(&t, &mut h);
             match texture {
                 Ok(tex) => {
-                    assets.push(tex);
-                }
-                Err(e) => {
-                    error = Some(e);
-                    break;
-                }
-            }
-        }
-        for app in App::list() {
-            let asset = Asset::new(app.name().to_string());
-            let texture = asset.get_texture(&t, &mut h);
-            match texture {
-                Ok(tex) => {
-                    assets.push(tex);
+                    let group = ButtonGroup::new(i);
+                    btns.push(DrawableButton::from_button(b, group, tex));
                 }
                 Err(e) => {
                     error = Some(e);
@@ -349,13 +365,12 @@ impl Renderer for RaylibRenderer {
         return RaylibRenderer {
             handle: h,
             thread: t,
-            buttons,
-            textures: assets,
+            buttons: btns,
             clicked_frames: 0,
             clicked_index: 0,
             hover_index: None,
+            loaded_apps: false,
             error,
-            apps: None,
             close: false,
         };
     }
@@ -363,6 +378,7 @@ impl Renderer for RaylibRenderer {
     fn is_running(&self) -> bool {
         return !self.handle.window_should_close() && !self.close;
     }
+
 
     fn update(&mut self, remote: &mut Option<Remote>) {
         match &self.error {
@@ -387,38 +403,23 @@ impl Renderer for RaylibRenderer {
             }
             None => match remote {
                 Some(r) => {
+                    if !self.loaded_apps {
+                        match self.load_apps(r) {
+                            Err(e) => self.error = Some(e),
+                            _ => {
+                                self.loaded_apps = true;
+                            }
+                        }
+                    }
                     if self.clicked_frames > 0 {
                         self.clicked_frames -= 1;
                     }
 
-                    if self.apps.is_none() {
-                        let res = r.get_apps();
-                        match res {
-                            Ok(apps) => self.apps = Some(apps),
-                            Err(e) => self.error = Some(e),
-                        }
-                    }
-
-                    // Update hover state
                     self.hover_index = None;
                     for (i, b) in self.buttons.iter().enumerate() {
                         if b.is_hovered(&self.handle) {
                             self.hover_index = Some(i);
                             break;
-                        }
-                    }
-                    if self.apps.is_some() {
-                        let apps = self.apps.as_ref().unwrap();
-                        for i in 0..apps.len() {
-                            if App::clicked(i, &self.handle) && self.clicked_frames == 0 {
-                                let _ = r.open_app(apps.get(i).unwrap().clone());
-                                self.clicked_frames = 15;
-                                self.clicked_index = i + self.buttons.len();
-                            }
-                            if App::is_hovered(i, &self.handle) {
-                                self.hover_index = Some(i + self.buttons.len());
-                                break;
-                            }
                         }
                     }
 
@@ -430,13 +431,10 @@ impl Renderer for RaylibRenderer {
 
                     for (i, b) in self.buttons.iter().enumerate() {
                         let mouse_clicked = b.clicked(&self.handle) && self.clicked_frames == 0;
-                        let shortcut_pressed = key == b.shortcut.to_raylib();
+                        let shortcut_pressed = b.shortcut.is_some() && key == b.shortcut.unwrap();
 
                         if mouse_clicked || shortcut_pressed {
-                            match r
-                                .send_key(&b.cmd)
-                                .with_context(|| "Failed to send key command to TV:")
-                            {
+                            match b.click(r) {
                                 Err(e) => {
                                     self.error = Some(e);
                                     break;
@@ -473,19 +471,9 @@ impl Renderer for RaylibRenderer {
                 d.clear_background(&bg);
 
                 for i in 0..self.buttons.len() {
-                    let cell = self.buttons[i].pos.find_grid_position();
-                    let group = ButtonGroup::new(i);
-                    let icon_rect = self.buttons[i].icon_rect();
                     let is_clicked = self.clicked_frames > 0 && self.clicked_index == i;
                     let is_hovered = self.hover_index == Some(i);
-                    let mut tex = None;
-                    if i < self.textures.len() {
-                        tex = self.textures.get(i);
-                    }
-                    RaylibRenderer::draw_button(
-                        &mut d, group, btn_base, btn_hover, cell, icon_rect, is_clicked,
-                        is_hovered, tex,
-                    );
+                    self.buttons[i].draw(&mut d, btn_base, btn_hover, is_clicked, is_hovered);
                 }
 
                 let title_x = W_WIDTH_CONTROLS / 2 - title_size / 2;
@@ -496,26 +484,6 @@ impl Renderer for RaylibRenderer {
                     24,
                     Color::RAYWHITE,
                 );
-                if self.apps.is_some() {
-                    let apps = self.apps.as_ref().unwrap();
-                    for i in 0..apps.len() {
-                        let cell = App::find_grid_position(i);
-                        let group = ButtonGroup::new(8);
-                        let icon_rect = App::icon_rect(i);
-                        let is_clicked =
-                            self.clicked_frames > 0 && self.clicked_index == i + self.buttons.len();
-                        let is_hovered = self.hover_index == Some(i + self.buttons.len());
-                        let mut tex = None;
-                        let tex_index = apps.get(i).unwrap().get_tex_index() + self.buttons.len();
-                        if tex_index < self.textures.len() {
-                            tex = self.textures.get(tex_index);
-                        }
-                        RaylibRenderer::draw_button(
-                            &mut d, group, btn_base, btn_hover, cell, icon_rect, is_clicked,
-                            is_hovered, tex,
-                        );
-                    }
-                }
             }
             Some(e) => {
                 let start_y = 80;

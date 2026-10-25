@@ -28,6 +28,7 @@ struct WsMessage {
     event: String,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum Key {
     Power,
     Up,
