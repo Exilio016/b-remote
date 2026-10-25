@@ -2,7 +2,8 @@ use anyhow::{Context, Error};
 use sola_raylib::prelude::*;
 
 use crate::{
-    remote::Remote, renderer::{Asset, Button, KeyCode, Position, Renderer},
+    remote::{App, Remote},
+    renderer::{Asset, Button, KeyCode, Position, Renderer},
 };
 
 pub struct RaylibRenderer {
@@ -14,12 +15,14 @@ pub struct RaylibRenderer {
     clicked_index: usize,
     hover_index: Option<usize>,
     error: Option<Error>,
+    apps: Option<Vec<App>>,
     close: bool,
 }
 
 const GRID_ROWS: i32 = 9;
 const GRID_COLS: i32 = 7;
-const W_WIDTH: i32 = 280;
+const W_WIDTH_CONTROLS: i32 = 280;
+const W_WIDTH: i32 = W_WIDTH_CONTROLS * 2;
 const W_HEIGHT: i32 = 420;
 const W_WIDTH_ERR: i32 = 800;
 const W_HEIGHT_ERR: i32 = 600;
@@ -91,7 +94,7 @@ impl KeyCode {
 
 impl Position {
     fn find_grid_position(&self) -> Rectangle {
-        let cell_width = (W_WIDTH / GRID_COLS) as f32;
+        let cell_width = (W_WIDTH_CONTROLS / GRID_COLS) as f32;
         let cell_height = (W_HEIGHT / GRID_ROWS) as f32;
 
         return Rectangle::new(
@@ -127,7 +130,6 @@ impl Button {
             && pos.y < (rec.y + rec.height)
     }
 
-
     fn icon_rect(&self) -> Rectangle {
         let cell = self.pos.find_grid_position();
         // Source icons are 24x24; don't upscale beyond that to avoid pixelation
@@ -141,6 +143,148 @@ impl Button {
             icon_size,
             icon_size,
         )
+    }
+}
+
+impl App {
+    fn find_grid_position(index: usize) -> Rectangle {
+        let cell_width = 68.0;
+        let cell_height = 68.0;
+
+        let row_count = ((W_WIDTH_CONTROLS - 20) as f32 / (cell_width + 10.0)) as usize;
+        let row_size = row_count as f32 * (cell_width + 5.0);
+        let start_x = W_WIDTH_CONTROLS as f32 / 2.0 - row_size / 2.0;
+        let y = 40.0 + ((index / row_count) as f32 * (cell_height + 5.0));
+        let x = W_WIDTH_CONTROLS as f32
+            + start_x
+            + ((index % row_count as usize) as f32 * (cell_width + 10.0));
+        return Rectangle::new(x, y, cell_width, cell_height);
+    }
+    pub fn get_tex_index(&self) -> usize {
+        for (i, a) in App::list().iter().enumerate() {
+            if self == a {
+                return i;
+            }
+        }
+        std::unreachable!();
+    }
+    fn icon_rect(index: usize) -> Rectangle {
+        let cell = App::find_grid_position(index);
+        let icon_size = 50.0;
+        Rectangle::new(
+            cell.x + (cell.width - icon_size) / 2.0,
+            cell.y + (cell.height - icon_size) / 2.0,
+            icon_size,
+            icon_size,
+        )
+    }
+
+    fn is_hovered(index: usize, rl: &RaylibHandle) -> bool {
+        let rec = App::find_grid_position(index);
+        let pos = rl.get_mouse_position();
+        pos.x > rec.x
+            && pos.x < (rec.x + rec.width)
+            && pos.y > rec.y
+            && pos.y < (rec.y + rec.height)
+    }
+
+    fn clicked(index: usize, rl: &RaylibHandle) -> bool {
+        if !rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT)
+            && !(rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT))
+        {
+            return false;
+        }
+        return App::is_hovered(index, rl);
+    }
+}
+
+impl RaylibRenderer {
+    fn draw_button(
+        d: &mut RaylibDrawHandle,
+        group: ButtonGroup,
+        btn_base: Color,
+        btn_hover: Color,
+        cell: Rectangle,
+        icon_rect: Rectangle,
+        is_clicked: bool,
+        is_hovered: bool,
+        texture: Option<&Texture2D>,
+    ) {
+        //Draw bg
+        let group_col = group.color();
+        let group_bg = Color::new(
+            (group_col.r as f32 * 0.08 + btn_base.r as f32 * 0.92) as u8,
+            (group_col.g as f32 * 0.08 + btn_base.g as f32 * 0.92) as u8,
+            (group_col.b as f32 * 0.08 + btn_base.b as f32 * 0.92) as u8,
+            255,
+        );
+        d.draw_rectangle_rounded(
+            Rectangle::new(
+                cell.x + 1.0,
+                cell.y + 1.0,
+                cell.width - 2.0,
+                cell.height - 2.0,
+            ),
+            CORNER_RADIUS,
+            8,
+            &group_bg,
+        );
+
+        let group_col = group.color();
+        // Button background
+        let bg_color = if is_clicked {
+            Color::new(
+                (group_col.r as f32 * 0.4 + btn_base.r as f32 * 0.6) as u8,
+                (group_col.g as f32 * 0.4 + btn_base.g as f32 * 0.6) as u8,
+                (group_col.b as f32 * 0.4 + btn_base.b as f32 * 0.6) as u8,
+                255,
+            )
+        } else if is_hovered {
+            btn_hover
+        } else {
+            btn_base
+        };
+
+        d.draw_rectangle_rounded(
+            Rectangle::new(
+                cell.x + 1.0,
+                cell.y + 1.0,
+                cell.width - 2.0,
+                cell.height - 2.0,
+            ),
+            CORNER_RADIUS,
+            8,
+            &bg_color,
+        );
+
+        // Subtle group accent line at top of button
+        if !is_clicked {
+            let accent_alpha = if is_hovered { 255 } else { 100 };
+            d.draw_rectangle_rounded(
+                Rectangle::new(cell.x + 1.0, cell.y + 1.0, cell.width - 2.0, 2.0),
+                0.5,
+                4,
+                &Color::new(group_col.r, group_col.g, group_col.b, accent_alpha),
+            );
+        }
+
+        // Draw icon centered in cell
+        if texture.is_some() {
+            let tex = texture.unwrap();
+            let tint = if is_clicked {
+                Color::new(220, 220, 230, 255)
+            } else {
+                Color::WHITE
+            };
+            d.draw_texture_pro(
+                tex,
+                Rectangle::new(0.0, 0.0, tex.width as f32, tex.height as f32),
+                icon_rect,
+                Vector2::new(0.0, 0.0),
+                0.0,
+                tint,
+            );
+        }
     }
 }
 
@@ -173,7 +317,10 @@ impl Renderer for RaylibRenderer {
                                 )
                             });
                             match texture {
-                                Ok(t) => assets.push(t),
+                                Ok(tex) => {
+                                    tex.set_texture_filter(&t, TextureFilter::TEXTURE_FILTER_ANISOTROPIC_16X);
+                                    assets.push(tex);
+                                }
                                 Err(e) => {
                                     error = Some(e);
                                     break;
@@ -192,6 +339,42 @@ impl Renderer for RaylibRenderer {
                 }
             }
         }
+        for app in App::list() {
+            let asset = Asset::new(app.name().to_string());
+            let bytes = &asset.get_bytes();
+            match bytes {
+                Some(a) => {
+                    let image = Image::load_image_from_mem(".png", a).with_context(|| {
+                        format!("Error loading image from asset {}:", asset.name())
+                    });
+                    match image {
+                        Ok(i) => {
+                            let texture = h.load_texture_from_image(&t, &i).with_context(|| {
+                                format!(
+                                    "Error loading texture from image for asset {}:",
+                                    app.name()
+                                )
+                            });
+                            match texture {
+                                Ok(t) => assets.push(t),
+                                Err(e) => {
+                                    error = Some(e);
+                                    break;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error = Some(e);
+                            break;
+                        }
+                    }
+                }
+                None => {
+                    error = Some(anyhow::anyhow!("Could not load asset {}", asset.name()));
+                    break;
+                }
+            }
+        }
 
         h.set_exit_key(None);
         return RaylibRenderer {
@@ -203,6 +386,7 @@ impl Renderer for RaylibRenderer {
             clicked_index: 0,
             hover_index: None,
             error,
+            apps: None,
             close: false,
         };
     }
@@ -238,12 +422,34 @@ impl Renderer for RaylibRenderer {
                         self.clicked_frames -= 1;
                     }
 
+                    if self.apps.is_none() {
+                        let res = r.get_apps();
+                        match res {
+                            Ok(apps) => self.apps = Some(apps),
+                            Err(e) => self.error = Some(e),
+                        }
+                    }
+
                     // Update hover state
                     self.hover_index = None;
                     for (i, b) in self.buttons.iter().enumerate() {
                         if b.is_hovered(&self.handle) {
                             self.hover_index = Some(i);
                             break;
+                        }
+                    }
+                    if self.apps.is_some() {
+                        let apps = self.apps.as_ref().unwrap();
+                        for i in 0..apps.len() {
+                            if App::clicked(i, &self.handle) && self.clicked_frames == 0 {
+                                let _ = r.open_app(apps.get(i).unwrap().clone());
+                                self.clicked_frames = 15;
+                                self.clicked_index = i + self.buttons.len();
+                            }
+                            if App::is_hovered(i, &self.handle) {
+                                self.hover_index = Some(i + self.buttons.len());
+                                break;
+                            }
                         }
                     }
 
@@ -293,95 +499,51 @@ impl Renderer for RaylibRenderer {
 
         match &self.error {
             None => {
+                let title_size = self.handle.measure_text("Applications", 24);
                 let mut d = self.handle.begin_drawing(&self.thread);
                 d.clear_background(&bg);
 
-                // Draw subtle grid group backgrounds
                 for i in 0..self.buttons.len() {
                     let cell = self.buttons[i].pos.find_grid_position();
                     let group = ButtonGroup::new(i);
-                    let group_col = group.color();
-                    let group_bg = Color::new(
-                        (group_col.r as f32 * 0.08 + btn_base.r as f32 * 0.92) as u8,
-                        (group_col.g as f32 * 0.08 + btn_base.g as f32 * 0.92) as u8,
-                        (group_col.b as f32 * 0.08 + btn_base.b as f32 * 0.92) as u8,
-                        255,
-                    );
-                    d.draw_rectangle_rounded(
-                        Rectangle::new(
-                            cell.x + 1.0,
-                            cell.y + 1.0,
-                            cell.width - 2.0,
-                            cell.height - 2.0,
-                        ),
-                        CORNER_RADIUS,
-                        8,
-                        &group_bg,
+                    let icon_rect = self.buttons[i].icon_rect();
+                    let is_clicked = self.clicked_frames > 0 && self.clicked_index == i;
+                    let is_hovered = self.hover_index == Some(i);
+                    let mut tex = None;
+                    if i < self.textures.len() {
+                        tex = self.textures.get(i);
+                    }
+                    RaylibRenderer::draw_button(
+                        &mut d, group, btn_base, btn_hover, cell, icon_rect, is_clicked,
+                        is_hovered, tex,
                     );
                 }
 
-                // Draw buttons
-                for i in 0..self.buttons.len() {
-                    let cell = self.buttons[i].pos.find_grid_position();
-                    let icon_rect = self.buttons[i].icon_rect();
-                    let group = ButtonGroup::new(i);
-                    let group_col = group.color();
-
-                    let is_clicked = self.clicked_frames > 0 && self.clicked_index == i;
-                    let is_hovered = self.hover_index == Some(i);
-
-                    // Button background
-                    let bg_color = if is_clicked {
-                        Color::new(
-                            (group_col.r as f32 * 0.4 + btn_base.r as f32 * 0.6) as u8,
-                            (group_col.g as f32 * 0.4 + btn_base.g as f32 * 0.6) as u8,
-                            (group_col.b as f32 * 0.4 + btn_base.b as f32 * 0.6) as u8,
-                            255,
-                        )
-                    } else if is_hovered {
-                        btn_hover
-                    } else {
-                        btn_base
-                    };
-
-                    d.draw_rectangle_rounded(
-                        Rectangle::new(
-                            cell.x + 1.0,
-                            cell.y + 1.0,
-                            cell.width - 2.0,
-                            cell.height - 2.0,
-                        ),
-                        CORNER_RADIUS,
-                        8,
-                        &bg_color,
-                    );
-
-                    // Subtle group accent line at top of button
-                    if !is_clicked {
-                        let accent_alpha = if is_hovered { 255 } else { 100 };
-                        d.draw_rectangle_rounded(
-                            Rectangle::new(cell.x + 1.0, cell.y + 1.0, cell.width - 2.0, 2.0),
-                            0.5,
-                            4,
-                            &Color::new(group_col.r, group_col.g, group_col.b, accent_alpha),
-                        );
-                    }
-
-                    // Draw icon centered in cell
-                    if i < self.textures.len() {
-                        let tex = &self.textures[i];
-                        let tint = if is_clicked {
-                            Color::new(220, 220, 230, 255)
-                        } else {
-                            Color::WHITE
-                        };
-                        d.draw_texture_pro(
-                            tex,
-                            Rectangle::new(0.0, 0.0, tex.width as f32, tex.height as f32),
-                            icon_rect,
-                            Vector2::new(0.0, 0.0),
-                            0.0,
-                            tint,
+                let title_x = W_WIDTH_CONTROLS / 2 - title_size / 2;
+                d.draw_text(
+                    "Applications",
+                    W_WIDTH_CONTROLS + title_x,
+                    10,
+                    24,
+                    Color::RAYWHITE,
+                );
+                if self.apps.is_some() {
+                    let apps = self.apps.as_ref().unwrap();
+                    for i in 0..apps.len() {
+                        let cell = App::find_grid_position(i);
+                        let group = ButtonGroup::new(8);
+                        let icon_rect = App::icon_rect(i);
+                        let is_clicked =
+                            self.clicked_frames > 0 && self.clicked_index == i + self.buttons.len();
+                        let is_hovered = self.hover_index == Some(i + self.buttons.len());
+                        let mut tex = None;
+                        let tex_index = apps.get(i).unwrap().get_tex_index() + self.buttons.len();
+                        if tex_index < self.textures.len() {
+                            tex = self.textures.get(tex_index);
+                        }
+                        RaylibRenderer::draw_button(
+                            &mut d, group, btn_base, btn_hover, cell, icon_rect, is_clicked,
+                            is_hovered, tex,
                         );
                     }
                 }
